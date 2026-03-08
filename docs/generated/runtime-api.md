@@ -13,6 +13,7 @@ so Worker and runtime-rs do not invent separate shapes.
 | `GET /api/internal/runtime/runs/:deploymentId` | `RuntimeRunRecord` |
 | `GET /api/internal/runtime/positions` | `RuntimeLedgerSnapshot` |
 | `GET /api/internal/runtime/pnl` | `RuntimeLedgerSnapshot.totals` projection |
+| `GET /api/internal/runtime/scorecards` | `RuntimePromotionReadinessReport` |
 | execution coordination payloads | `RuntimeRiskVerdict`, `RuntimeExecutionPlan`, `RuntimeReconciliationResult` |
 
 ## Artifact locations

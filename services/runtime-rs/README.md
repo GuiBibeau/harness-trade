@@ -97,6 +97,7 @@ Route surface:
 - `GET /api/internal/runtime/risk?deploymentId=:deploymentId`
 - `GET /api/internal/runtime/positions?deploymentId=:deploymentId`
 - `GET /api/internal/runtime/pnl?deploymentId=:deploymentId`
+- `GET /api/internal/runtime/scorecards?deploymentId=:deploymentId`
 
 Example shadow evaluation flow:
 

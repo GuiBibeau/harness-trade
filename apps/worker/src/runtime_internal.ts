@@ -17,6 +17,7 @@ const INTERNAL_RUNTIME_PREFIX = "/api/internal/runtime";
 const INTERNAL_RUNTIME_DEPLOYMENTS_PREFIX = `${INTERNAL_RUNTIME_PREFIX}/deployments/`;
 const INTERNAL_RUNTIME_RUNS_PREFIX = `${INTERNAL_RUNTIME_PREFIX}/runs/`;
 const INTERNAL_RUNTIME_EXECUTION_PLANS_PATH = `${INTERNAL_RUNTIME_PREFIX}/execution-plans`;
+const INTERNAL_RUNTIME_SCORECARDS_PATH = `${INTERNAL_RUNTIME_PREFIX}/scorecards`;
 const FIXTURE_TIMESTAMP = "2026-03-07T00:00:00.000Z";
 const FIXTURE_BASE_MINT = "So11111111111111111111111111111111111111112";
 const FIXTURE_QUOTE_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -181,6 +182,104 @@ function createRuntimeLedgerFixture(
   });
 }
 
+function createRuntimeScorecardFixture(deploymentId: string) {
+  return {
+    schemaVersion: RUNTIME_PROTOCOL_SCHEMA_VERSION,
+    deploymentId,
+    mode: "shadow",
+    state: "shadow",
+    generatedAt: FIXTURE_TIMESTAMP,
+    scorecard: {
+      triggerQuality: {
+        totalRuns: 3,
+        freshTriggerCount: 3,
+        staleFeatureRejectCount: 0,
+        freshTriggerRateBps: 10000,
+      },
+      planQuality: {
+        allowedRunCount: 3,
+        plannedRunCount: 3,
+        planCoverageBps: 10000,
+        dryRunCount: 3,
+        simulateOnlyCount: 3,
+        dryRunPlanRateBps: 10000,
+        simulateOnlyPlanRateBps: 10000,
+      },
+      expectedVsObserved: {
+        submitAttemptCount: 3,
+        receiptCount: 3,
+        reconciliationCount: 3,
+        reconciliationPassCount: 3,
+        reconciliationManualReviewCount: 0,
+        reconciliationFailedCount: 0,
+        reconciliationPassRateBps: 10000,
+        correctionAppliedCount: 0,
+        driftAlertCount: 0,
+        completedRunCount: 3,
+        failedRunCount: 0,
+        manualReviewRunCount: 0,
+      },
+      pnl: {
+        latestEquityUsd: "1088.00",
+        latestReservedUsd: "125.00",
+        latestAvailableUsd: "963.00",
+        realizedPnlUsd: "10.00",
+        unrealizedPnlUsd: "3.00",
+        totalPnlUsd: "13.00",
+        maxDrawdownUsd: "2.00",
+      },
+      risk: {
+        verdictCount: 3,
+        allowCount: 3,
+        rejectCount: 0,
+        pauseCount: 0,
+        allowRateBps: 10000,
+        rejectRateBps: 0,
+        pauseRateBps: 0,
+        staleFeatureRejectCount: 0,
+        concentrationRejectCount: 0,
+        killSwitchPauseCount: 0,
+      },
+    },
+    promotionGates: [
+      {
+        sourceMode: "shadow",
+        targetMode: "paper",
+        eligible: true,
+        status: "pass",
+        summary: "Shadow promotion gate evaluation complete.",
+        checks: [
+          {
+            gateId: "shadow-min-runs",
+            status: "pass",
+            observedValue: "3",
+            thresholdValue: "3",
+            message: "Shadow mode needs enough completed evidence runs.",
+          },
+        ],
+      },
+      {
+        sourceMode: "paper",
+        targetMode: "live",
+        eligible: false,
+        status: "not_applicable",
+        summary: "Paper-to-live promotion only applies to paper deployments.",
+        checks: [
+          {
+            gateId: "deployment-mode",
+            status: "not_applicable",
+            observedValue: "shadow",
+            thresholdValue: "paper",
+            message:
+              "Paper-to-live promotion only applies to paper deployments.",
+          },
+        ],
+      },
+    ],
+    proofArtifactMarkdown: "## Runtime Promotion Readiness",
+  };
+}
+
 async function readJsonBody(request: Request): Promise<unknown> {
   try {
     return await request.json();
@@ -216,6 +315,7 @@ function buildRuntimeHealthPayload(env: Env, service: string) {
       runs: `${INTERNAL_RUNTIME_PREFIX}/runs/:deploymentId`,
       positions: `${INTERNAL_RUNTIME_PREFIX}/positions`,
       pnl: `${INTERNAL_RUNTIME_PREFIX}/pnl`,
+      scorecards: INTERNAL_RUNTIME_SCORECARDS_PATH,
       executionPlans: INTERNAL_RUNTIME_EXECUTION_PLANS_PATH,
       health: `${INTERNAL_RUNTIME_PREFIX}/health`,
     },
@@ -254,6 +354,7 @@ export async function handleRuntimeInternalRoute(
     url.pathname === `${INTERNAL_RUNTIME_PREFIX}/deployments` ||
     url.pathname === `${INTERNAL_RUNTIME_PREFIX}/positions` ||
     url.pathname === `${INTERNAL_RUNTIME_PREFIX}/pnl` ||
+    url.pathname === INTERNAL_RUNTIME_SCORECARDS_PATH ||
     url.pathname === INTERNAL_RUNTIME_EXECUTION_PLANS_PATH ||
     url.pathname.startsWith(INTERNAL_RUNTIME_DEPLOYMENTS_PREFIX) ||
     url.pathname.startsWith(INTERNAL_RUNTIME_RUNS_PREFIX);
@@ -383,6 +484,20 @@ export async function handleRuntimeInternalRoute(
       deploymentId,
       asOf: snapshot.asOf,
       totals: snapshot.totals,
+    });
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname === INTERNAL_RUNTIME_SCORECARDS_PATH
+  ) {
+    const deploymentId =
+      url.searchParams.get("deploymentId") ?? "deployment_fixture";
+    return json({
+      ok: true,
+      source: "stub",
+      deploymentId,
+      report: createRuntimeScorecardFixture(deploymentId),
     });
   }
 
