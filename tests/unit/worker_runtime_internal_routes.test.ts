@@ -129,6 +129,7 @@ describe("worker runtime internal routes", () => {
         deployments: "/api/internal/runtime/deployments",
         executionPlans: "/api/internal/runtime/execution-plans",
         health: "/api/internal/runtime/health",
+        scorecards: "/api/internal/runtime/scorecards",
       },
     });
   });
@@ -189,6 +190,44 @@ describe("worker runtime internal routes", () => {
         runId: "run_123",
         sliceCount: 1,
       },
+    });
+  });
+
+  test("returns stubbed runtime scorecards and promotion gates", async () => {
+    const env = createWorkerLiveEnv();
+
+    const response = await worker.fetch(
+      new Request(
+        "http://localhost/api/internal/runtime/scorecards?deploymentId=deployment_123",
+        {
+          headers: {
+            authorization: "Bearer runtime-service-secret",
+          },
+        },
+      ),
+      env,
+      createExecutionContextStub(),
+    );
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      ok: true,
+      source: "stub",
+      deploymentId: "deployment_123",
+      report: {
+        mode: "shadow",
+        scorecard: {
+          triggerQuality: {
+            totalRuns: 3,
+          },
+        },
+      },
+    });
+    expect(payload.report.promotionGates[0]).toMatchObject({
+      sourceMode: "shadow",
+      targetMode: "paper",
+      status: "pass",
     });
   });
 });

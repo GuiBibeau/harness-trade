@@ -24,6 +24,9 @@ use risk_engine::{
     RiskEngineSnapshot,
 };
 use runtime_ops::{health_snapshot, RuntimeConfig};
+use runtime_scorecards::{
+    build_readiness_report, RuntimeScorecardConfig, RuntimeScorecardError, RuntimeScorecardInput,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use strategy_core::SUPPORTED_STRATEGIES;
@@ -237,6 +240,10 @@ pub fn app(config: RuntimeConfig) -> Router {
         .route(
             &format!("{INTERNAL_RUNTIME_PREFIX}/reconciliations"),
             get(reconciliations_handler),
+        )
+        .route(
+            &format!("{INTERNAL_RUNTIME_PREFIX}/scorecards"),
+            get(scorecards_handler),
         )
         .route(
             &format!("{INTERNAL_RUNTIME_PREFIX}/risk"),
@@ -782,6 +789,74 @@ async fn reconciliations_handler(
     ))
 }
 
+async fn scorecards_handler(
+    headers: HeaderMap,
+    Query(query): Query<RuntimeDeploymentQuery>,
+    State(state): State<RuntimeAppState>,
+) -> HandlerResult {
+    authorize_internal_request(&headers, &state)?;
+    let deployment_id = require_deployment_id(query)?;
+    let deployment = state
+        .strategy_registry
+        .get_deployment(&deployment_id)
+        .map_err(map_registry_error)?
+        .ok_or_else(|| {
+            error_json(
+                StatusCode::NOT_FOUND,
+                "deployment-not-found",
+                json!({ "deploymentId": deployment_id }),
+            )
+        })?;
+    let runs = state
+        .strategy_registry
+        .list_runs(&deployment_id)
+        .map_err(map_registry_error)?;
+    let verdicts = state
+        .risk_engine
+        .list_verdicts(&deployment_id)
+        .map_err(map_risk_error)?;
+    let plans = state
+        .execution_planner
+        .list_plans(&deployment_id)
+        .map_err(map_execution_planner_error)?;
+    let reconciliation_bundle = state
+        .reconciler
+        .bundle_for_deployment(&deployment_id)
+        .map_err(map_reconciler_error)?;
+    let latest_ledger_snapshot = state
+        .portfolio_ledger
+        .snapshot_for_deployment(&deployment_id)
+        .map_err(map_ledger_error)?;
+    let report = build_readiness_report(
+        &RuntimeScorecardConfig::default(),
+        &RuntimeScorecardInput {
+            deployment,
+            runs,
+            verdicts,
+            plans,
+            submit_attempt_count: reconciliation_bundle.submit_attempts.len() as u64,
+            receipt_count: reconciliation_bundle.receipts.len() as u64,
+            reconciliations: reconciliation_bundle.results,
+            observed_ledger_snapshots: reconciliation_bundle
+                .wallet_observations
+                .into_iter()
+                .map(|record| record.snapshot)
+                .collect(),
+            latest_ledger_snapshot: Some(latest_ledger_snapshot),
+        },
+    )
+    .map_err(map_scorecard_error)?;
+    Ok(OkJson::with_status(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "source": "runtime-rs",
+            "deploymentId": deployment_id,
+            "report": report,
+        }),
+    ))
+}
+
 async fn positions_handler(
     headers: HeaderMap,
     Query(query): Query<RuntimeDeploymentQuery>,
@@ -1165,6 +1240,16 @@ fn map_reconciler_error(error: ReconcilerError) -> JsonPayload {
             StatusCode::INTERNAL_SERVER_ERROR,
             "runtime-reconciliation-error",
             json!({ "reason": error.to_string() }),
+        ),
+    }
+}
+
+fn map_scorecard_error(error: RuntimeScorecardError) -> JsonPayload {
+    match error {
+        RuntimeScorecardError::InvalidUsdAmount { field, value } => error_json(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "runtime-scorecard-error",
+            json!({ "field": field, "value": value }),
         ),
     }
 }
@@ -1801,6 +1886,7 @@ mod tests {
         assert_eq!(plans_payload["plans"].as_array().expect("array").len(), 1);
 
         let reconciliations_response = router
+            .clone()
             .oneshot(
                 Request::builder()
                     .uri("/api/internal/runtime/reconciliations?deploymentId=deployment_123")
@@ -1840,6 +1926,32 @@ mod tests {
                 .len(),
             1
         );
+
+        let scorecards_response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/internal/runtime/scorecards?deploymentId=deployment_123")
+                    .header("authorization", "Bearer runtime-service-secret")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(scorecards_response.status(), StatusCode::OK);
+        let scorecards_payload = read_json(scorecards_response).await;
+        assert_eq!(
+            scorecards_payload["report"]["scorecard"]["triggerQuality"]["totalRuns"],
+            json!(1)
+        );
+        assert_eq!(
+            scorecards_payload["report"]["promotionGates"][0]["targetMode"],
+            json!("paper")
+        );
+        assert!(scorecards_payload["report"]["proofArtifactMarkdown"]
+            .as_str()
+            .expect("markdown")
+            .contains("Runtime Promotion Readiness"));
     }
 
     #[tokio::test]

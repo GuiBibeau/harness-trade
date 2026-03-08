@@ -976,6 +976,7 @@ dependencies = [
  "reconciler",
  "risk-engine",
  "runtime-ops",
+ "runtime-scorecards",
  "serde",
  "serde_json",
  "strategy-core",
@@ -985,6 +986,16 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "runtime-scorecards"
+version = "0.1.0"
+dependencies = [
+ "protocol",
+ "serde",
+ "thiserror",
+ "time",
 ]
 
 [[package]]

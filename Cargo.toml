@@ -8,6 +8,7 @@ members = [
   "crates/protocol",
   "crates/reconciler",
   "crates/risk-engine",
+  "crates/runtime-scorecards",
   "crates/runtime-ops",
   "crates/strategy-registry",
   "crates/strategy-core",

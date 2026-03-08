@@ -364,6 +364,123 @@ pub struct RuntimeReconciliationResult {
     pub correction_applied: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimePromotionGateStatus {
+    Pass,
+    Blocked,
+    NotApplicable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeTriggerQualityScorecard {
+    pub total_runs: u64,
+    pub fresh_trigger_count: u64,
+    pub stale_feature_reject_count: u64,
+    pub fresh_trigger_rate_bps: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePlanQualityScorecard {
+    pub allowed_run_count: u64,
+    pub planned_run_count: u64,
+    pub plan_coverage_bps: u16,
+    pub dry_run_count: u64,
+    pub simulate_only_count: u64,
+    pub dry_run_plan_rate_bps: u16,
+    pub simulate_only_plan_rate_bps: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeExpectedObservedScorecard {
+    pub submit_attempt_count: u64,
+    pub receipt_count: u64,
+    pub reconciliation_count: u64,
+    pub reconciliation_pass_count: u64,
+    pub reconciliation_manual_review_count: u64,
+    pub reconciliation_failed_count: u64,
+    pub reconciliation_pass_rate_bps: u16,
+    pub correction_applied_count: u64,
+    pub drift_alert_count: u64,
+    pub completed_run_count: u64,
+    pub failed_run_count: u64,
+    pub manual_review_run_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePnlScorecard {
+    pub latest_equity_usd: String,
+    pub latest_reserved_usd: String,
+    pub latest_available_usd: String,
+    pub realized_pnl_usd: String,
+    pub unrealized_pnl_usd: String,
+    pub total_pnl_usd: String,
+    pub max_drawdown_usd: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeRiskScorecard {
+    pub verdict_count: u64,
+    pub allow_count: u64,
+    pub reject_count: u64,
+    pub pause_count: u64,
+    pub allow_rate_bps: u16,
+    pub reject_rate_bps: u16,
+    pub pause_rate_bps: u16,
+    pub stale_feature_reject_count: u64,
+    pub concentration_reject_count: u64,
+    pub kill_switch_pause_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeScorecard {
+    pub trigger_quality: RuntimeTriggerQualityScorecard,
+    pub plan_quality: RuntimePlanQualityScorecard,
+    pub expected_vs_observed: RuntimeExpectedObservedScorecard,
+    pub pnl: RuntimePnlScorecard,
+    pub risk: RuntimeRiskScorecard,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePromotionGateCheck {
+    pub gate_id: String,
+    pub status: RuntimePromotionGateStatus,
+    pub observed_value: String,
+    pub threshold_value: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePromotionGateDecision {
+    pub source_mode: RuntimeMode,
+    pub target_mode: RuntimeMode,
+    pub eligible: bool,
+    pub status: RuntimePromotionGateStatus,
+    pub checks: Vec<RuntimePromotionGateCheck>,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePromotionReadinessReport {
+    pub schema_version: String,
+    pub deployment_id: String,
+    pub mode: RuntimeMode,
+    pub state: RuntimeDeploymentState,
+    pub generated_at: String,
+    pub scorecard: RuntimeScorecard,
+    pub promotion_gates: Vec<RuntimePromotionGateDecision>,
+    pub proof_artifact_markdown: String,
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, path::PathBuf};
