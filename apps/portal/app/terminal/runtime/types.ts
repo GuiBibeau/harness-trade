@@ -2,7 +2,7 @@ import type {
   RuntimeDeploymentRecord,
   RuntimeLedgerSnapshot,
   RuntimeRunRecord,
-} from "../../../../worker/src/runtime_contracts";
+} from "../../../lib/runtime-contracts";
 
 export type RuntimeControlAction = "pause" | "resume" | "kill";
 

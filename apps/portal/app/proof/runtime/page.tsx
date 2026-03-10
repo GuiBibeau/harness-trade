@@ -235,7 +235,7 @@ function buildPayload(selectedDeploymentId: string): RuntimeOperatorApiPayload {
 }
 
 export default function RuntimeProofPage() {
-  const [selectedDeploymentId, setSelectedDeploymentId] = useState(
+  const [selectedDeploymentId, setSelectedDeploymentId] = useState<string>(
     DEPLOYMENTS[0].deploymentId,
   );
   const [actionPending, setActionPending] =

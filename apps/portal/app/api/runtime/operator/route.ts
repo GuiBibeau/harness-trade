@@ -6,7 +6,7 @@ import {
   safeParseRuntimeDeploymentRecord,
   safeParseRuntimeLedgerSnapshot,
   safeParseRuntimeRunRecord,
-} from "../../../../../worker/src/runtime_contracts";
+} from "../../../../lib/runtime-contracts";
 
 const LOCAL_EDGE_API_BASE = "http://127.0.0.1:8888";
 const BEARER_RE = /^bearer\s+/i;
