@@ -245,6 +245,9 @@ async function loadRuntimeDetail(
       deploymentId,
       deployment: parsedDeployment?.success ? parsedDeployment.data : null,
       runs: parseRuns(result.payload.runs),
+      allocator: isRecord(result.payload.allocator)
+        ? result.payload.allocator
+        : null,
       positions: parseLedgerSnapshot(result.payload.positions),
       pnl: parsePnl(result.payload.pnl),
       scorecard: isRecord(result.payload.scorecard)
