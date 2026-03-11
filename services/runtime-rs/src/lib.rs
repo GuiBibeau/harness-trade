@@ -1,9 +1,5 @@
 use std::sync::{Arc, RwLock};
 
-use backtesting_engine::{
-    BacktestRunRequest, BacktestingEngine, BacktestingEngineConfig, BacktestingEngineError,
-    BacktestingEngineSnapshot, BacktestingQuery,
-};
 use asset_registry::{
     AssetRegistry, AssetRegistryConfig, AssetRegistryError, AssetRegistryQuery,
     AssetRegistrySnapshot,
@@ -14,6 +10,10 @@ use axum::{
     http::{HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
+};
+use backtesting_engine::{
+    BacktestRunRequest, BacktestingEngine, BacktestingEngineConfig, BacktestingEngineError,
+    BacktestingEngineSnapshot, BacktestingQuery,
 };
 use cost_model_registry::{
     CostModelRegistry, CostModelRegistryConfig, CostModelRegistryError, CostModelRegistryQuery,
@@ -42,8 +42,8 @@ use portfolio_ledger::{
 use protocol::{
     RuntimeAssetListingState, RuntimeAssetRecord, RuntimeBacktestBaseline,
     RuntimeBacktestWindowMode, RuntimeDeploymentRecord, RuntimeDeploymentState,
-    RuntimeExecutionCostModelRecord, RuntimeExecutionCostModelStatus,
-    RuntimeFeatureCatalogStatus, RuntimeFeatureDefinitionRecord, RuntimeHistoricalDatasetKind,
+    RuntimeExecutionCostModelRecord, RuntimeExecutionCostModelStatus, RuntimeFeatureCatalogStatus,
+    RuntimeFeatureDefinitionRecord, RuntimeHistoricalDatasetKind,
     RuntimeHistoricalDatasetSnapshotRecord, RuntimeMode, RuntimeRegimeTagRecord,
     RuntimeReplayCorpusRecord, RuntimeResearchEvidenceBundleRecord,
     RuntimeResearchExperimentRecord, RuntimeResearchHypothesisRecord, RuntimeResearchSourceRecord,
@@ -1727,7 +1727,10 @@ fn enforce_backtest_evidence_gate(
 }
 
 fn promotion_target_requires_backtest(promotion_target: &str) -> bool {
-    matches!(promotion_target, "paper" | "limited_live" | "broad_live" | "live")
+    matches!(
+        promotion_target,
+        "paper" | "limited_live" | "broad_live" | "live"
+    )
 }
 
 fn parse_backtest_artifact_uri(uri: &str) -> Option<String> {
@@ -2632,7 +2635,10 @@ fn map_backtesting_engine_error(error: BacktestingEngineError) -> JsonPayload {
             "runtime-backtest-fixture-missing",
             json!({ "corpusId": corpus_id }),
         ),
-        BacktestingEngineError::InsufficientObservations { required, available } => error_json(
+        BacktestingEngineError::InsufficientObservations {
+            required,
+            available,
+        } => error_json(
             StatusCode::UNPROCESSABLE_ENTITY,
             "runtime-backtest-insufficient-observations",
             json!({ "required": required, "available": available }),
@@ -4419,7 +4425,10 @@ mod tests {
             )
             .await
             .expect("response");
-        assert_eq!(missing_backtest_evidence.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            missing_backtest_evidence.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
 
         let backtest_response = router
             .clone()

@@ -4,14 +4,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use feature_cache::{DerivedMarketFeatureSnapshot, FeatureCache, FeatureCacheConfig, FeatureCacheError};
+use feature_cache::{
+    DerivedMarketFeatureSnapshot, FeatureCache, FeatureCacheConfig, FeatureCacheError,
+};
 use market_adapters::{FeedGatewayError, FeedReplayFixture};
 use protocol::{
     RuntimeBacktestBaseline, RuntimeBacktestBaselineComparison, RuntimeBacktestConfig,
     RuntimeBacktestFoldReport, RuntimeBacktestMetrics, RuntimeBacktestRegimeMetrics,
     RuntimeBacktestReport, RuntimeBacktestStatus, RuntimeBacktestWindowMode,
     RuntimeExecutionCostModelRecord, RuntimeFeatureDefinitionRecord, RuntimeRegimeTagRecord,
-    RuntimeResearchExperimentRecord, RuntimeReplayCorpusRecord, RuntimeStrategySpec,
+    RuntimeReplayCorpusRecord, RuntimeResearchExperimentRecord, RuntimeStrategySpec,
     RUNTIME_PROTOCOL_SCHEMA_VERSION,
 };
 use rusqlite::{params, Connection, OptionalExtension};
@@ -104,7 +106,9 @@ pub enum BacktestingEngineError {
     MissingFixtureUri { corpus_id: String },
     #[error("invalid backtest config: {reason}")]
     InvalidConfig { reason: String },
-    #[error("insufficient observations for backtest: required at least {required}, got {available}")]
+    #[error(
+        "insufficient observations for backtest: required at least {required}, got {available}"
+    )]
     InsufficientObservations { required: usize, available: usize },
     #[error("backtest report {report_id} not found")]
     ReportNotFound { report_id: String },
@@ -122,7 +126,10 @@ impl BacktestingEngine {
         }
     }
 
-    pub fn run(&self, input: &BacktestRunRequest) -> Result<BacktestRunResult, BacktestingEngineError> {
+    pub fn run(
+        &self,
+        input: &BacktestRunRequest,
+    ) -> Result<BacktestRunResult, BacktestingEngineError> {
         validate_config(&input.config)?;
         let fixture = load_replay_fixture(&input.replay_corpus)?;
         let observations = build_observations(&fixture, &input.regime_tags)?;
@@ -138,15 +145,17 @@ impl BacktestingEngine {
 
         let strategy_digest = strategy_spec_digest(&input.strategy_spec)?;
         let generated_at = now_rfc3339();
-        let report_id = input
-            .report_id
-            .clone()
-            .unwrap_or_else(|| default_report_id(&input.experiment.experiment_id, &strategy_digest, &input.config));
-        let missing_feature_keys = missing_required_feature_keys(
-            &input.strategy_spec,
-            &input.feature_definitions,
-        );
-        let missing_regime_keys = missing_required_regime_keys(&input.strategy_spec, &input.regime_tags);
+        let report_id = input.report_id.clone().unwrap_or_else(|| {
+            default_report_id(
+                &input.experiment.experiment_id,
+                &strategy_digest,
+                &input.config,
+            )
+        });
+        let missing_feature_keys =
+            missing_required_feature_keys(&input.strategy_spec, &input.feature_definitions);
+        let missing_regime_keys =
+            missing_required_regime_keys(&input.strategy_spec, &input.regime_tags);
         let evaluations = evaluate_walk_forward_folds(
             &observations,
             &input.strategy_spec,
@@ -167,7 +176,8 @@ impl BacktestingEngine {
             ));
         }
         if evaluations.len() < 2 {
-            blocking_reasons.push("walk-forward evaluation requires at least two folds".to_string());
+            blocking_reasons
+                .push("walk-forward evaluation requires at least two folds".to_string());
         }
 
         let fold_reports = evaluations
@@ -363,6 +373,16 @@ struct AggregateEvaluation {
     regimes: Vec<RuntimeBacktestRegimeMetrics>,
 }
 
+struct FoldEvaluationContext<'a> {
+    training: &'a [Observation],
+    testing: &'a [Observation],
+    purged_observation_count: u32,
+    strategy_spec: &'a RuntimeStrategySpec,
+    calibration: &'a Calibration,
+    cost_model: Option<&'a RuntimeExecutionCostModelRecord>,
+    baselines: &'a [RuntimeBacktestBaseline],
+}
+
 fn evaluate_walk_forward_folds(
     observations: &[Observation],
     strategy_spec: &RuntimeStrategySpec,
@@ -390,16 +410,16 @@ fn evaluate_walk_forward_folds(
         let training = &observations[train_start..train_end];
         let testing = &observations[test_start..test_start + test_size];
         let calibration = calibrate_strategy(strategy_spec, training);
-        evaluations.push(evaluate_fold(
-            fold_index,
+        let context = FoldEvaluationContext {
             training,
             testing,
-            purge_size as u32,
+            purged_observation_count: purge_size as u32,
             strategy_spec,
-            &calibration,
+            calibration: &calibration,
             cost_model,
-            &config.baseline_strategies,
-        )?);
+            baselines: &config.baseline_strategies,
+        };
+        evaluations.push(evaluate_fold(fold_index, &context)?);
         fold_index += 1;
         test_start += step_size.max(1);
     }
@@ -409,13 +429,7 @@ fn evaluate_walk_forward_folds(
 
 fn evaluate_fold(
     fold_index: u32,
-    training: &[Observation],
-    testing: &[Observation],
-    purged_observation_count: u32,
-    strategy_spec: &RuntimeStrategySpec,
-    calibration: &Calibration,
-    cost_model: Option<&RuntimeExecutionCostModelRecord>,
-    baselines: &[RuntimeBacktestBaseline],
+    context: &FoldEvaluationContext<'_>,
 ) -> Result<FoldEvaluation, BacktestingEngineError> {
     let mut previous_exposure = 0.0_f64;
     let mut cumulative_net = 0.0_f64;
@@ -423,14 +437,14 @@ fn evaluate_fold(
     let mut raw_metrics = RawMetrics::default();
     let mut baseline_totals = BTreeMap::new();
     let mut regime_totals: BTreeMap<(String, String), RegimeAccumulator> = BTreeMap::new();
-    for baseline in baselines {
+    for baseline in context.baselines {
         baseline_totals.insert(baseline.clone(), 0.0);
     }
 
-    for observation in testing {
-        let exposure = target_exposure(strategy_spec, observation, calibration);
+    for observation in context.testing {
+        let exposure = target_exposure(context.strategy_spec, observation, context.calibration);
         let turnover = (exposure - previous_exposure).abs();
-        let cost_bps = modeled_cost_bps(cost_model, turnover, observation)?;
+        let cost_bps = modeled_cost_bps(context.cost_model, turnover, observation)?;
         let gross_return_bps = exposure * observation.next_return_bps;
         let net_return_bps = gross_return_bps - cost_bps;
 
@@ -450,7 +464,7 @@ fn evaluate_fold(
             .max_drawdown_bps
             .max((peak_net - cumulative_net).max(0.0));
 
-        for baseline in baselines {
+        for baseline in context.baselines {
             let entry = baseline_totals.entry(baseline.clone()).or_insert(0.0);
             *entry += baseline_return_bps(baseline, observation.next_return_bps);
         }
@@ -473,47 +487,55 @@ fn evaluate_fold(
     let fold_metrics = runtime_backtest_metrics(&raw_metrics);
     let baseline_comparisons = baseline_totals
         .iter()
-        .map(|(baseline, baseline_return)| RuntimeBacktestBaselineComparison {
-            baseline: baseline.clone(),
-            baseline_return_bps: format_bps(*baseline_return),
-            excess_return_bps: format_bps(raw_metrics.net_return_bps - *baseline_return),
-        })
+        .map(
+            |(baseline, baseline_return)| RuntimeBacktestBaselineComparison {
+                baseline: baseline.clone(),
+                baseline_return_bps: format_bps(*baseline_return),
+                excess_return_bps: format_bps(raw_metrics.net_return_bps - *baseline_return),
+            },
+        )
         .collect::<Vec<_>>();
     let regime_metrics = regime_totals
         .iter()
-        .map(|((regime_key, regime_value), accumulator)| RuntimeBacktestRegimeMetrics {
-            regime_key: regime_key.clone(),
-            regime_value: regime_value.clone(),
-            observation_count: accumulator.observation_count,
-            trade_count: accumulator.trade_count,
-            net_return_bps: format_bps(accumulator.net_return_bps),
-            win_rate_bps: rate_bps(accumulator.win_count, accumulator.observation_count),
-        })
+        .map(
+            |((regime_key, regime_value), accumulator)| RuntimeBacktestRegimeMetrics {
+                regime_key: regime_key.clone(),
+                regime_value: regime_value.clone(),
+                observation_count: accumulator.observation_count,
+                trade_count: accumulator.trade_count,
+                net_return_bps: format_bps(accumulator.net_return_bps),
+                win_rate_bps: rate_bps(accumulator.win_count, accumulator.observation_count),
+            },
+        )
         .collect::<Vec<_>>();
 
     Ok(FoldEvaluation {
         fold_report: RuntimeBacktestFoldReport {
             fold_id: format!("fold_{fold_index}"),
             fold_index,
-            training_start_at: training
+            training_start_at: context
+                .training
                 .first()
                 .map(|record| record.observed_at.clone())
                 .unwrap_or_else(now_rfc3339),
-            training_end_at: training
+            training_end_at: context
+                .training
                 .last()
                 .map(|record| record.next_observed_at.clone())
                 .unwrap_or_else(now_rfc3339),
-            test_start_at: testing
+            test_start_at: context
+                .testing
                 .first()
                 .map(|record| record.observed_at.clone())
                 .unwrap_or_else(now_rfc3339),
-            test_end_at: testing
+            test_end_at: context
+                .testing
                 .last()
                 .map(|record| record.next_observed_at.clone())
                 .unwrap_or_else(now_rfc3339),
-            train_observation_count: training.len() as u32,
-            purged_observation_count,
-            test_observation_count: testing.len() as u32,
+            train_observation_count: context.training.len() as u32,
+            purged_observation_count: context.purged_observation_count,
+            test_observation_count: context.testing.len() as u32,
             metrics: fold_metrics,
             baseline_comparisons,
             regime_metrics,
@@ -544,8 +566,9 @@ fn aggregate_evaluations(
         aggregate_raw.net_return_bps += evaluation.raw_metrics.net_return_bps;
         aggregate_raw.total_cost_bps += evaluation.raw_metrics.total_cost_bps;
         aggregate_raw.win_count += evaluation.raw_metrics.win_count;
-        aggregate_raw.max_drawdown_bps =
-            aggregate_raw.max_drawdown_bps.max(evaluation.raw_metrics.max_drawdown_bps);
+        aggregate_raw.max_drawdown_bps = aggregate_raw
+            .max_drawdown_bps
+            .max(evaluation.raw_metrics.max_drawdown_bps);
         for (baseline, total) in &evaluation.baseline_totals {
             *baseline_totals.entry(baseline.clone()).or_insert(0.0) += total;
         }
@@ -590,14 +613,16 @@ fn aggregate_evaluations(
             .collect(),
         regimes: regime_totals
             .iter()
-            .map(|((regime_key, regime_value), accumulator)| RuntimeBacktestRegimeMetrics {
-                regime_key: regime_key.clone(),
-                regime_value: regime_value.clone(),
-                observation_count: accumulator.observation_count,
-                trade_count: accumulator.trade_count,
-                net_return_bps: format_bps(accumulator.net_return_bps),
-                win_rate_bps: rate_bps(accumulator.win_count, accumulator.observation_count),
-            })
+            .map(
+                |((regime_key, regime_value), accumulator)| RuntimeBacktestRegimeMetrics {
+                    regime_key: regime_key.clone(),
+                    regime_value: regime_value.clone(),
+                    observation_count: accumulator.observation_count,
+                    trade_count: accumulator.trade_count,
+                    net_return_bps: format_bps(accumulator.net_return_bps),
+                    win_rate_bps: rate_bps(accumulator.win_count, accumulator.observation_count),
+                },
+            )
             .collect(),
     }
 }
@@ -700,7 +725,8 @@ fn build_observations(
             break;
         }
         let current_price = parse_number("feature.midPriceUsd", &snapshot.mid_price_usd)?;
-        let next_price = parse_number("feature.midPriceUsd", &snapshots[index + 1].2.mid_price_usd)?;
+        let next_price =
+            parse_number("feature.midPriceUsd", &snapshots[index + 1].2.mid_price_usd)?;
         let next_return_bps = if current_price <= 0.0 {
             0.0
         } else {
@@ -758,7 +784,10 @@ fn classify_trend(value: Option<&str>, flat_threshold_bps: f64) -> String {
     }
 }
 
-fn calibrate_strategy(strategy_spec: &RuntimeStrategySpec, observations: &[Observation]) -> Calibration {
+fn calibrate_strategy(
+    strategy_spec: &RuntimeStrategySpec,
+    observations: &[Observation],
+) -> Calibration {
     let short_abs = observations
         .iter()
         .filter_map(|record| parse_optional_metric(record.feature.short_return_bps.as_deref()))
@@ -771,12 +800,16 @@ fn calibrate_strategy(strategy_spec: &RuntimeStrategySpec, observations: &[Obser
         .collect::<Vec<_>>();
     let volatility = observations
         .iter()
-        .filter_map(|record| parse_optional_metric(record.feature.realized_volatility_bps.as_deref()))
+        .filter_map(|record| {
+            parse_optional_metric(record.feature.realized_volatility_bps.as_deref())
+        })
         .collect::<Vec<_>>();
     let mut calibration = Calibration {
         primary_threshold_bps: percentile(short_abs.clone(), 0.5).unwrap_or(8.0).max(5.0),
         confirmation_threshold_bps: percentile(long_abs.clone(), 0.5).unwrap_or(10.0).max(8.0),
-        low_vol_threshold_bps: percentile(volatility.clone(), 0.33).unwrap_or(12.0).max(8.0),
+        low_vol_threshold_bps: percentile(volatility.clone(), 0.33)
+            .unwrap_or(12.0)
+            .max(8.0),
         high_vol_threshold_bps: percentile(volatility, 0.66).unwrap_or(20.0).max(12.0),
     };
     if strategy_spec.strategy_key == "breakout" {
@@ -791,10 +824,13 @@ fn target_exposure(
     observation: &Observation,
     calibration: &Calibration,
 ) -> f64 {
-    let short_return = parse_optional_metric(observation.feature.short_return_bps.as_deref()).unwrap_or(0.0);
-    let long_return = parse_optional_metric(observation.feature.long_return_bps.as_deref()).unwrap_or(0.0);
+    let short_return =
+        parse_optional_metric(observation.feature.short_return_bps.as_deref()).unwrap_or(0.0);
+    let long_return =
+        parse_optional_metric(observation.feature.long_return_bps.as_deref()).unwrap_or(0.0);
     let realized_volatility =
-        parse_optional_metric(observation.feature.realized_volatility_bps.as_deref()).unwrap_or(0.0);
+        parse_optional_metric(observation.feature.realized_volatility_bps.as_deref())
+            .unwrap_or(0.0);
 
     match strategy_spec.strategy_key.as_str() {
         "dca" | "twap" => 1.0,
@@ -911,7 +947,12 @@ fn load_replay_fixture(
     let fixture_uri = replay_corpus
         .fixture_uri
         .clone()
-        .or_else(|| replay_corpus.dataset_snapshots.iter().find_map(|snapshot| snapshot.uri.clone()))
+        .or_else(|| {
+            replay_corpus
+                .dataset_snapshots
+                .iter()
+                .find_map(|snapshot| snapshot.uri.clone())
+        })
         .ok_or_else(|| BacktestingEngineError::MissingFixtureUri {
             corpus_id: replay_corpus.corpus_id.clone(),
         })?;
@@ -1400,7 +1441,10 @@ mod tests {
 
         assert!(result.created);
         assert_eq!(result.report.fold_reports.len(), 2);
-        assert_eq!(result.report.config.window_mode, RuntimeBacktestWindowMode::Rolling);
+        assert_eq!(
+            result.report.config.window_mode,
+            RuntimeBacktestWindowMode::Rolling
+        );
         assert_eq!(result.report.aggregate_metrics.observation_count, 2);
         assert!(!result.report.aggregate_regime_metrics.is_empty());
         assert_eq!(result.report.status, RuntimeBacktestStatus::Completed);
