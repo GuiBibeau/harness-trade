@@ -223,7 +223,19 @@ async function main() {
   ensureApp(config);
   stageSecrets(config);
   destroyStandbyRegionMachines(config, listMachines(config.appName));
-  deployRuntime(config);
+  try {
+    deployRuntime(config);
+  } catch (error) {
+    const rollbackMachines = listMachines(config.appName);
+    const rollbackPrimary =
+      listPrimaryMachines(config, rollbackMachines)[0] ?? null;
+
+    if (rollbackPrimary) {
+      await ensureStandby(config, rollbackPrimary.id);
+    }
+
+    throw error;
+  }
 
   let machines = listMachines(config.appName);
   const primary = selectPrimaryMachine(config, machines);
