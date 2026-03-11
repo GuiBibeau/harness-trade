@@ -145,13 +145,14 @@ impl BacktestingEngine {
 
         let strategy_digest = strategy_spec_digest(&input.strategy_spec)?;
         let generated_at = now_rfc3339();
-        let report_id = input.report_id.clone().unwrap_or_else(|| {
-            default_report_id(
+        let report_id = match input.report_id.clone() {
+            Some(report_id) => report_id,
+            None => default_report_id(
                 &input.experiment.experiment_id,
                 &strategy_digest,
                 &input.config,
-            )
-        });
+            )?,
+        };
         let missing_feature_keys =
             missing_required_feature_keys(&input.strategy_spec, &input.feature_definitions);
         let missing_regime_keys =
@@ -389,7 +390,7 @@ fn evaluate_walk_forward_folds(
     cost_model: Option<&RuntimeExecutionCostModelRecord>,
     config: &RuntimeBacktestConfig,
 ) -> Result<Vec<FoldEvaluation>, BacktestingEngineError> {
-    let effective = observations.len() - 1;
+    let effective = observations.len();
     let train_size = config.training_window_observations as usize;
     let test_size = config.testing_window_observations as usize;
     let step_size = config.step_observations as usize;
@@ -994,18 +995,12 @@ fn default_report_id(
     experiment_id: &str,
     strategy_digest: &str,
     config: &RuntimeBacktestConfig,
-) -> String {
+) -> Result<String, BacktestingEngineError> {
     let mut hasher = Sha256::new();
     hasher.update(strategy_digest.as_bytes());
-    hasher.update(config.replay_corpus_id.as_bytes());
-    hasher.update(config.venue_key.as_bytes());
-    hasher.update(config.pair_symbol.as_bytes());
-    hasher.update(config.training_window_observations.to_le_bytes());
-    hasher.update(config.testing_window_observations.to_le_bytes());
-    hasher.update(config.step_observations.to_le_bytes());
-    hasher.update(config.purge_observations.to_le_bytes());
+    hasher.update(serde_json::to_vec(config)?);
     let digest = format!("{:x}", hasher.finalize());
-    format!("backtest_{experiment_id}_{}", &digest[..12])
+    Ok(format!("backtest_{experiment_id}_{}", &digest[..12]))
 }
 
 fn strategy_spec_digest(
@@ -1440,12 +1435,12 @@ mod tests {
             .expect("backtest to run");
 
         assert!(result.created);
-        assert_eq!(result.report.fold_reports.len(), 2);
+        assert_eq!(result.report.fold_reports.len(), 3);
         assert_eq!(
             result.report.config.window_mode,
             RuntimeBacktestWindowMode::Rolling
         );
-        assert_eq!(result.report.aggregate_metrics.observation_count, 2);
+        assert_eq!(result.report.aggregate_metrics.observation_count, 3);
         assert!(!result.report.aggregate_regime_metrics.is_empty());
         assert_eq!(result.report.status, RuntimeBacktestStatus::Completed);
         assert!(result.report.promotion_eligible);
@@ -1494,5 +1489,62 @@ mod tests {
             .blocking_reasons
             .iter()
             .any(|reason| reason.contains("missing required feature definitions")));
+    }
+
+    #[test]
+    fn generated_report_ids_include_full_backtest_config() {
+        let strategy_digest = strategy_spec_digest(&allocation_strategy_spec()).expect("digest");
+        let base = RuntimeBacktestConfig {
+            replay_corpus_id: "replay_corpus_sol_usdc_feature_cache".to_string(),
+            venue_key: "jupiter".to_string(),
+            pair_symbol: "SOL/USDC".to_string(),
+            market_type: protocol::RuntimeVenueMarketType::Spot,
+            window_mode: RuntimeBacktestWindowMode::Rolling,
+            training_window_observations: 2,
+            testing_window_observations: 1,
+            step_observations: 1,
+            purge_observations: 0,
+            baseline_strategies: vec![
+                RuntimeBacktestBaseline::FlatCash,
+                RuntimeBacktestBaseline::BuyAndHold,
+            ],
+        };
+        let market_variant = RuntimeBacktestConfig {
+            market_type: protocol::RuntimeVenueMarketType::Perp,
+            ..base.clone()
+        };
+        let window_variant = RuntimeBacktestConfig {
+            window_mode: RuntimeBacktestWindowMode::Expanding,
+            ..base.clone()
+        };
+        let baseline_variant = RuntimeBacktestConfig {
+            baseline_strategies: vec![RuntimeBacktestBaseline::FlatCash],
+            ..base.clone()
+        };
+
+        let base_id = default_report_id("experiment_signal_trend_shadow", &strategy_digest, &base)
+            .expect("id");
+        let market_id = default_report_id(
+            "experiment_signal_trend_shadow",
+            &strategy_digest,
+            &market_variant,
+        )
+        .expect("market id");
+        let window_id = default_report_id(
+            "experiment_signal_trend_shadow",
+            &strategy_digest,
+            &window_variant,
+        )
+        .expect("window id");
+        let baseline_id = default_report_id(
+            "experiment_signal_trend_shadow",
+            &strategy_digest,
+            &baseline_variant,
+        )
+        .expect("baseline id");
+
+        assert_ne!(base_id, market_id);
+        assert_ne!(base_id, window_id);
+        assert_ne!(base_id, baseline_id);
     }
 }

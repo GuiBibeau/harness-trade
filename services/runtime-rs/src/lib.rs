@@ -1723,6 +1723,19 @@ fn enforce_backtest_evidence_gate(
             }),
         ));
     }
+    if report.experiment_id != record.experiment_id || report.strategy_key != record.strategy_key {
+        return Err(error_json(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "backtest-report-mismatch",
+            json!({
+                "reportId": report.report_id,
+                "reportExperimentId": report.experiment_id,
+                "reportStrategyKey": report.strategy_key,
+                "evidenceExperimentId": record.experiment_id,
+                "evidenceStrategyKey": record.strategy_key,
+            }),
+        ));
+    }
     Ok(())
 }
 
@@ -4467,6 +4480,66 @@ mod tests {
             "{backtest_payload:?}"
         );
         assert_eq!(backtest_payload["report"]["promotionEligible"], json!(true));
+
+        let mismatched_evidence_response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/internal/runtime/research/evidence-bundles")
+                    .header("authorization", "Bearer runtime-service-secret")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "schemaVersion": "v1",
+                            "evidenceBundleId": "evidence_alloc_dca_wrong_backtest",
+                            "experimentId": "experiment_alloc_dca_backtest",
+                            "strategyKey": "trend_following",
+                            "status": "ready_for_review",
+                            "promotionTarget": "paper",
+                            "createdAt": "2026-03-10T14:21:30.000Z",
+                            "updatedAt": "2026-03-10T14:21:30.000Z",
+                            "venueKeys": ["jupiter"],
+                            "assetKeys": ["SOL", "USDC"],
+                            "sourceCitations": [{ "sourceId": "source_strategy_lab_seed" }],
+                            "codeRevision": {
+                                "vcs": "git",
+                                "repository": "github.com/GuiBibeau/serious-trader-ralph",
+                                "revision": "356b539e3ec730663c4025b8f00cd6b47b823d1a",
+                                "treeDirty": false
+                            },
+                            "datasetSnapshots": [
+                                {
+                                    "datasetId": "dataset_feature_cache_sol_usdc_market_events",
+                                    "snapshotId": "snapshot_2026_03_07_backtest",
+                                    "capturedAt": "2026-03-10T14:00:00.000Z"
+                                }
+                            ],
+                            "artifacts": [
+                                {
+                                    "artifactId": "backtest-report",
+                                    "kind": "backtest-report",
+                                    "uri": "runtime-backtest://backtest_alloc_dca_report"
+                                }
+                            ],
+                            "summary": "Paper promotion with a mismatched backtest report should fail.",
+                            "tags": ["promotion", "backtest"]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            mismatched_evidence_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let mismatched_evidence_payload = read_json(mismatched_evidence_response).await;
+        assert_eq!(
+            mismatched_evidence_payload["error"],
+            json!("backtest-report-mismatch")
+        );
 
         let evidence_response = router
             .clone()
