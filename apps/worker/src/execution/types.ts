@@ -1,5 +1,6 @@
 import type { JupiterClient, JupiterQuoteResponse } from "../jupiter";
 import type { NormalizedPolicy } from "../policy";
+import type { RuntimeMode } from "../runtime_contracts";
 import type { SolanaRpc } from "../solana_rpc";
 import type { Env, ExecutionConfig } from "../types";
 
@@ -11,6 +12,9 @@ export type ExecutionLogFn = (
 
 export type ExecuteSwapInput = {
   env: Env;
+  venueKey?: string;
+  runtimeMode?: RuntimeMode;
+  requireVenueRouting?: boolean;
   execution?: ExecutionConfig;
   policy: NormalizedPolicy;
   rpc: SolanaRpc;
