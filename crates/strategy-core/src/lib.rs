@@ -338,10 +338,7 @@ impl VenueKind {
 
     fn order_types(&self) -> Vec<RuntimeVenueOrderType> {
         match self {
-            Self::Phoenix => vec![
-                RuntimeVenueOrderType::Market,
-                RuntimeVenueOrderType::Limit,
-            ],
+            Self::Phoenix => vec![RuntimeVenueOrderType::Market, RuntimeVenueOrderType::Limit],
             Self::Jupiter | Self::MagicBlock => vec![RuntimeVenueOrderType::Market],
         }
     }
@@ -447,8 +444,11 @@ pub const SUPPORTED_STRATEGIES: [StrategyKind; 8] = [
     StrategyKind::VolatilityTarget,
 ];
 
-pub const SUPPORTED_VENUES: [VenueKind; 3] =
-    [VenueKind::Jupiter, VenueKind::MagicBlock, VenueKind::Phoenix];
+pub const SUPPORTED_VENUES: [VenueKind; 3] = [
+    VenueKind::Jupiter,
+    VenueKind::MagicBlock,
+    VenueKind::Phoenix,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StrategyDeploymentDescriptor {
@@ -603,7 +603,11 @@ impl VenueCatalog {
         adapter_key: &str,
     ) -> Result<&RuntimeVenueCapability, VenueCatalogError> {
         let capability = self.require(venue_key)?;
-        if !capability.adapter_keys.iter().any(|value| value == adapter_key) {
+        if !capability
+            .adapter_keys
+            .iter()
+            .any(|value| value == adapter_key)
+        {
             return Err(VenueCatalogError::UnsupportedAdapter {
                 venue_key: venue_key.to_string(),
                 adapter_key: adapter_key.to_string(),
@@ -711,10 +715,7 @@ fn invalid_spec(spec: &RuntimeStrategySpec, reason: &str) -> StrategyCatalogErro
     }
 }
 
-fn invalid_capability(
-    capability: &RuntimeVenueCapability,
-    reason: &str,
-) -> VenueCatalogError {
+fn invalid_capability(capability: &RuntimeVenueCapability, reason: &str) -> VenueCatalogError {
     VenueCatalogError::InvalidCapability {
         venue_key: capability.venue_key.clone(),
         reason: reason.to_string(),

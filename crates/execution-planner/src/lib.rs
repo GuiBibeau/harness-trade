@@ -539,7 +539,8 @@ fn ensure_deployment_venue_support(
     venue_catalog: &VenueCatalog,
     deployment: &RuntimeDeploymentRecord,
 ) -> Result<(), ExecutionPlannerError> {
-    let capability = venue_catalog.ensure_mode_supported(&deployment.venue_key, &deployment.mode)?;
+    let capability =
+        venue_catalog.ensure_mode_supported(&deployment.venue_key, &deployment.mode)?;
     if !capability
         .market_types
         .contains(&RuntimeVenueMarketType::Spot)
@@ -1627,11 +1628,8 @@ mod tests {
                 notes: None,
             })
             .expect("custom venue capability");
-        let planner = planner_with_plugin_and_venues(
-            "limit-only-venue",
-            "custom_signal",
-            venue_catalog,
-        );
+        let planner =
+            planner_with_plugin_and_venues("limit-only-venue", "custom_signal", venue_catalog);
         let mut input = input(
             "run_limit_only",
             "custom_signal",

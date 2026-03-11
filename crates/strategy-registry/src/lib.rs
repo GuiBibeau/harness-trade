@@ -143,7 +143,11 @@ pub enum StrategyRegistryError {
 
 impl StrategyRegistry {
     pub fn new(config: StrategyRegistryConfig) -> Result<Self, StrategyRegistryError> {
-        Self::with_catalogs(config, StrategyCatalog::builtin()?, VenueCatalog::builtin()?)
+        Self::with_catalogs(
+            config,
+            StrategyCatalog::builtin()?,
+            VenueCatalog::builtin()?,
+        )
     }
 
     pub fn with_catalog(
@@ -187,11 +191,7 @@ impl StrategyRegistry {
         deployment: &RuntimeDeploymentRecord,
     ) -> Result<DeploymentWriteResult, StrategyRegistryError> {
         ensure_supported_strategy(&self.strategy_catalog, &deployment.strategy_key)?;
-        ensure_supported_venue(
-            &self.strategy_catalog,
-            &self.venue_catalog,
-            deployment,
-        )?;
+        ensure_supported_venue(&self.strategy_catalog, &self.venue_catalog, deployment)?;
 
         let mut connection = self.open_connection()?;
         let transaction = connection.transaction()?;

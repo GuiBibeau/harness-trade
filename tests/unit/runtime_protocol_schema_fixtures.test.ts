@@ -108,6 +108,7 @@ describe("runtime protocol schema fixtures", () => {
       "docs/runtime-contracts/schemas/runtime.research_source.v1.schema.json",
       "docs/runtime-contracts/schemas/runtime.research_experiment.v1.schema.json",
       "docs/runtime-contracts/schemas/runtime.research_evidence_bundle.v1.schema.json",
+      "docs/runtime-contracts/schemas/runtime.venue_capability.v1.schema.json",
       "docs/runtime-contracts/schemas/runtime.strategy_spec.v1.schema.json",
     ]);
   });
