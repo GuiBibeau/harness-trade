@@ -89,7 +89,10 @@ Current required secret names:
 
 - Cloudflare: `CLOUDFLARE_API_TOKEN`
 - Vercel: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`
+- Fly: `FLY_API_TOKEN`
 - Admin routes: `ADMIN_TOKEN`
+- Runtime deploy and canary support:
+  `RUNTIME_INTERNAL_SERVICE_TOKEN`, `RUNTIME_DATABASE_URL`
 - Integration and live test inputs vary by suite and may include
   `RPC_ENDPOINT`, `BALANCE_RPC_ENDPOINT`, `JUPITER_API_KEY`,
   `WALLET_PRIVATE_KEY`, and provider-specific read keys.
