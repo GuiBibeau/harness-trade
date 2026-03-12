@@ -237,6 +237,7 @@ Operators should use the Worker as the public control plane:
 - `GET /api/admin/ops/runtime`
 - `POST /api/admin/ops/runtime/research/briefs`
 - `POST /api/admin/ops/runtime/research/synthesis`
+- `POST /api/admin/ops/runtime/research/triage`
 - `POST /api/admin/ops/runtime/deployments/:deploymentId/pause`
 - `POST /api/admin/ops/runtime/deployments/:deploymentId/resume`
 - `POST /api/admin/ops/runtime/deployments/:deploymentId/kill`
@@ -265,6 +266,16 @@ bun run strategy-lab:synthesize --brief-file .tmp/strategy-lab-research/brief.js
 That command writes `.tmp/strategy-lab-synthesis/synthesis.json` and
 `.tmp/strategy-lab-synthesis/synthesis.md`, including a draft hypothesis,
 StrategySpec scaffold, evaluation plan, and candidate-issue body.
+
+Candidate triage stays on the same internal-only pattern:
+
+```bash
+bun run strategy-lab:triage --synthesis-file .tmp/strategy-lab-synthesis/synthesis.json
+```
+
+That command writes `.tmp/strategy-lab-triage/triage.json` and
+`.tmp/strategy-lab-triage/triage.md`, including novelty scoring, duplicate
+matches, explainable rationale, and an optional archival recommendation.
 
 The runtime operator surface now includes allocator details for a deployment:
 
