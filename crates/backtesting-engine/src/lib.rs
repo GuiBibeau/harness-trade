@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
@@ -866,7 +865,10 @@ fn load_replay_fixture(
 fn resolve_fixture_uri(uri: &str) -> Result<PathBuf, BacktestingEngineError> {
     let without_fragment = uri.split('#').next().unwrap_or(uri);
     if let Some(relative) = without_fragment.strip_prefix("repo://") {
-        return Ok(resolve_repo_relative_path(relative, &candidate_repo_roots()));
+        return Ok(resolve_repo_relative_path(
+            relative,
+            &candidate_repo_roots(),
+        ));
     }
     let candidate = PathBuf::from(without_fragment);
     if candidate.is_absolute() {
@@ -1271,13 +1273,10 @@ mod tests {
             "backtesting-engine-resolve-{}",
             OffsetDateTime::now_utc().unix_timestamp_nanos()
         ));
-        let fixture = root.join("services/runtime-rs/fixtures/runtime-feed-replay.sol_usdc.v1.json");
-        fs::create_dir_all(
-            fixture
-                .parent()
-                .expect("fixture parent directory to exist"),
-        )
-        .expect("fixture directory");
+        let fixture =
+            root.join("services/runtime-rs/fixtures/runtime-feed-replay.sol_usdc.v1.json");
+        fs::create_dir_all(fixture.parent().expect("fixture parent directory to exist"))
+            .expect("fixture directory");
         fs::write(&fixture, "{}").expect("fixture file");
 
         let resolved = resolve_repo_relative_path(
