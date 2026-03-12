@@ -1,5 +1,6 @@
 import { parseRuntimeResearchBriefRequest } from "../../../src/runtime/research/briefs.js";
 import { parseRuntimeResearchSynthesisRequest } from "../../../src/runtime/research/synthesis.js";
+import { parseRuntimeResearchCandidateTriageRequest } from "../../../src/runtime/research/triage.js";
 import { buildAgentQueryResponse } from "./agent_query";
 import { requireUser } from "./auth";
 import { getUserSubscription, toSubscriptionView } from "./billing";
@@ -154,6 +155,7 @@ import {
 } from "./runtime_internal";
 import { runRuntimeResearchBriefWorkflow } from "./runtime_research_briefs";
 import { runRuntimeResearchSynthesisWorkflow } from "./runtime_research_synthesis";
+import { runRuntimeResearchCandidateTriageWorkflow } from "./runtime_research_triage";
 import { SolanaRpc } from "./solana_rpc";
 import type { Env, ExecutionConfig } from "./types";
 import type { UserRow } from "./users_db";
@@ -2314,6 +2316,50 @@ const worker = {
                   error instanceof Error
                     ? error.message
                     : "runtime-research-synthesis-failed",
+              },
+              { status: 400 },
+            ),
+            env,
+          );
+        }
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/admin/ops/runtime/research/triage"
+      ) {
+        const auth = authorizeAdminRoute(request, env);
+        if (!auth.ok) {
+          return withCors(
+            json({ ok: false, error: auth.error }, { status: auth.status }),
+            env,
+          );
+        }
+        try {
+          const triageRequest = parseRuntimeResearchCandidateTriageRequest(
+            await request.json(),
+          );
+          const result = await runRuntimeResearchCandidateTriageWorkflow({
+            env,
+            request: triageRequest,
+          });
+          return withCors(
+            json({
+              ok: true,
+              triage: result.triage,
+              markdown: result.markdown,
+            }),
+            env,
+          );
+        } catch (error) {
+          return withCors(
+            json(
+              {
+                ok: false,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "runtime-research-triage-failed",
               },
               { status: 400 },
             ),

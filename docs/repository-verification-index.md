@@ -295,6 +295,26 @@ Verify:
 - the Worker admin route writes the hypothesis through the existing runtime
   bridge instead of bypassing repo-owned contracts.
 
+### 3h. Strategy-lab triage verification
+
+For candidate triage, novelty scoring, and archival routing work:
+
+```bash
+bun run lint
+bun run typecheck
+bun test tests/unit/runtime_research_triage.test.ts tests/unit/worker_runtime_research_triage_route.test.ts
+bun test tests/unit/worker_runtime_research_synthesis_route.test.ts tests/unit/worker_runtime_internal_routes.test.ts tests/unit/worker_runtime_contracts.test.ts
+```
+
+Verify:
+
+- duplicate and near-duplicate candidates are detected with explainable reasons,
+- novelty, evidence, venue-fit, and implementation-cost signals are explicit,
+- weak or duplicate candidates can be archived without deleting provenance,
+- the triage route compares against the current research registry and repo-owned
+  built-in strategy references,
+- triage remains internal-only on the Worker admin boundary.
+
 ### 4. x402 and discovery verification
 
 Portal-side discovery:
