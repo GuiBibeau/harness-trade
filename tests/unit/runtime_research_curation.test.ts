@@ -72,4 +72,14 @@ describe("resolvePersistedCollectionRecord", () => {
       "source_paper_microstructure",
     );
   });
+
+  test("throws a helpful error when neither the persisted payload nor fallback parse", () => {
+    expect(() =>
+      resolvePersistedCollectionRecord({
+        payloadValue: { reportId: "backtest_seed" },
+        fallbackValue: { replayCorpusId: "replay_seed" } as never,
+        parseItem: parseRuntimeAssetRecord as never,
+      }),
+    ).toThrow(/runtime-research-curation-invalid-persisted-record/);
+  });
 });

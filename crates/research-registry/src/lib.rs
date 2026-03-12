@@ -64,6 +64,7 @@ pub struct ResearchRegistryQueryResult {
 }
 
 type ResearchRegistrySnapshotCounts = (u64, u64, u64, u64, u64, Option<String>);
+type SameIdRefreshOk = fn(&str, &str) -> Result<bool, serde_json::Error>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResearchWriteResult<T> {
@@ -154,6 +155,7 @@ impl ResearchRegistry {
                 id_column: "hypothesis_id",
                 id_value: &record.hypothesis_id,
                 identity_key: &identity_key,
+                same_id_refresh_ok: None,
                 record_type: "research hypothesis",
                 record_json: serialize_json(record)?,
                 order_column: "updated_at",
@@ -187,6 +189,7 @@ impl ResearchRegistry {
                 id_column: "source_id",
                 id_value: &record.source_id,
                 identity_key: &identity_key,
+                same_id_refresh_ok: None,
                 record_type: "research source",
                 record_json: serialize_json(record)?,
                 order_column: "updated_at",
@@ -223,6 +226,7 @@ impl ResearchRegistry {
                 id_column: "experiment_id",
                 id_value: &record.experiment_id,
                 identity_key: &identity_key,
+                same_id_refresh_ok: None,
                 record_type: "research experiment",
                 record_json: serialize_json(record)?,
                 order_column: "updated_at",
@@ -260,6 +264,7 @@ impl ResearchRegistry {
                 id_column: "evidence_bundle_id",
                 id_value: &record.evidence_bundle_id,
                 identity_key: &identity_key,
+                same_id_refresh_ok: None,
                 record_type: "research evidence bundle",
                 record_json: serialize_json(record)?,
                 order_column: "updated_at",
@@ -299,6 +304,7 @@ impl ResearchRegistry {
                 id_column: "reproducibility_bundle_id",
                 id_value: &record.reproducibility_bundle_id,
                 identity_key: &identity_key,
+                same_id_refresh_ok: Some(reproducibility_bundle_same_id_refresh_ok),
                 record_type: "research reproducibility bundle",
                 record_json: serialize_json(record)?,
                 order_column: "updated_at",
@@ -601,6 +607,7 @@ struct PersistSpec<'a> {
     id_column: &'static str,
     id_value: &'a str,
     identity_key: &'a str,
+    same_id_refresh_ok: Option<SameIdRefreshOk>,
     record_type: &'static str,
     record_json: String,
     order_column: &'static str,
@@ -627,9 +634,17 @@ fn persist_record<T>(
 where
     T: DeserializeOwned + Clone,
 {
-    if find_record_json_by_id(connection, &spec)?.is_some() {
+    if let Some(existing_json) = find_record_json_by_id(connection, &spec)? {
         let existing_identity = find_identity_key_by_id(connection, &spec)?;
-        if existing_identity.as_deref() != Some(spec.identity_key) {
+        let same_id_refresh_ok = if existing_identity.as_deref() != Some(spec.identity_key) {
+            match spec.same_id_refresh_ok {
+                Some(check) => check(&existing_json, &spec.record_json)?,
+                None => false,
+            }
+        } else {
+            false
+        };
+        if existing_identity.as_deref() != Some(spec.identity_key) && !same_id_refresh_ok {
             return Err(ResearchRegistryError::IdentityConflict {
                 record_type: spec.record_type,
                 record_id: spec.id_value.to_string(),
@@ -1179,6 +1194,49 @@ fn reproducibility_bundle_identity_key(
     }))
 }
 
+fn reproducibility_bundle_refresh_key(
+    record: &RuntimeResearchReproducibilityBundleRecord,
+) -> Result<String, serde_json::Error> {
+    let manifest = &record.manifest;
+    identity_key(&serde_json::json!({
+        "reproducibilityBundleId": record.reproducibility_bundle_id,
+        "experimentId": record.experiment_id,
+        "strategyKey": record.strategy_key,
+        "venueKeys": sorted_slice(&record.venue_keys),
+        "assetKeys": sorted_slice(&record.asset_keys),
+        "sourceCitations": sorted_citations(&record.source_citations),
+        "codeRevision": record.code_revision,
+        "datasetSnapshots": sorted_dataset_snapshots(&record.dataset_snapshots),
+        "manifest": {
+            "manifestId": manifest.manifest_id,
+            "codeRevision": manifest.code_revision,
+            "datasetSnapshots": sorted_dataset_snapshots(&manifest.dataset_snapshots),
+            "replayCorpusId": manifest.replay_corpus_id,
+            "venueKey": manifest.venue_key,
+            "pairSymbol": manifest.pair_symbol,
+            "marketType": manifest.market_type,
+            "strategySpecDigest": manifest.strategy_spec_digest,
+            "featureVersions": manifest.feature_versions,
+            "regimeVersions": manifest.regime_versions,
+            "costModel": manifest.cost_model,
+            "backtestConfig": manifest.backtest_config,
+        },
+        "expectedReportId": record.expected_result.report_id,
+        "linkedEvidenceBundleIds": sorted_slice(&record.linked_evidence_bundle_ids),
+        "verificationTolerance": record.verification_tolerance,
+    }))
+}
+
+fn reproducibility_bundle_same_id_refresh_ok(
+    existing_json: &str,
+    incoming_json: &str,
+) -> Result<bool, serde_json::Error> {
+    let existing: RuntimeResearchReproducibilityBundleRecord = deserialize_json(existing_json)?;
+    let incoming: RuntimeResearchReproducibilityBundleRecord = deserialize_json(incoming_json)?;
+    Ok(reproducibility_bundle_refresh_key(&existing)?
+        == reproducibility_bundle_refresh_key(&incoming)?)
+}
+
 fn sorted_slice(values: &[String]) -> Vec<String> {
     let mut normalized = values
         .iter()
@@ -1689,6 +1747,116 @@ mod tests {
             RuntimeResearchExperimentStatus::Running
         );
         assert_eq!(query.experiments[0].completed_at, None);
+    }
+
+    #[test]
+    fn refreshes_existing_reproducibility_bundle_when_same_id_reruns() {
+        let registry = registry("update-reproducibility");
+        registry.upsert_source(&source_record()).expect("source");
+        registry
+            .upsert_hypothesis(&hypothesis_record())
+            .expect("hypothesis");
+        registry
+            .upsert_experiment(&experiment_record())
+            .expect("experiment");
+
+        let first = registry
+            .upsert_reproducibility_bundle(&reproducibility_bundle_record())
+            .expect("first reproducibility bundle");
+
+        let mut refreshed = reproducibility_bundle_record();
+        refreshed.updated_at = "2026-03-10T14:25:00Z".to_string();
+        refreshed.expected_result.aggregate_metrics = Some(protocol::RuntimeBacktestMetrics {
+            observation_count: 8,
+            trade_count: 4,
+            gross_return_bps: "44.5000".to_string(),
+            net_return_bps: "41.7500".to_string(),
+            total_cost_bps: "2.7500".to_string(),
+            win_rate_bps: 7500,
+            max_drawdown_bps: "7.9000".to_string(),
+        });
+
+        let second = registry
+            .upsert_reproducibility_bundle(&refreshed)
+            .expect("updated reproducibility bundle");
+
+        assert!(first.created);
+        assert!(!second.created);
+        assert_eq!(
+            second.record.reproducibility_bundle_id,
+            refreshed.reproducibility_bundle_id
+        );
+        assert_eq!(second.record.updated_at, refreshed.updated_at);
+        assert_eq!(
+            second
+                .record
+                .expected_result
+                .aggregate_metrics
+                .as_ref()
+                .expect("aggregate metrics")
+                .trade_count,
+            4
+        );
+
+        let query = registry
+            .query(&ResearchRegistryQuery {
+                strategy_key: Some("trend_following".to_string()),
+                venue_key: Some("jupiter".to_string()),
+                asset_key: Some("SOL".to_string()),
+                source_id: Some("source_paper_microstructure".to_string()),
+            })
+            .expect("query");
+        assert_eq!(query.reproducibility_bundles.len(), 1);
+        assert_eq!(
+            query.reproducibility_bundles[0].updated_at,
+            refreshed.updated_at
+        );
+        assert_eq!(
+            query.reproducibility_bundles[0]
+                .expected_result
+                .aggregate_metrics
+                .as_ref()
+                .expect("query aggregate metrics")
+                .trade_count,
+            4
+        );
+    }
+
+    #[test]
+    fn rejects_reproducibility_bundle_refresh_when_logical_identity_changes() {
+        let registry = registry("reject-repro-refresh");
+        registry.upsert_source(&source_record()).expect("source");
+        registry
+            .upsert_hypothesis(&hypothesis_record())
+            .expect("hypothesis");
+        registry
+            .upsert_experiment(&experiment_record())
+            .expect("experiment");
+
+        registry
+            .upsert_reproducibility_bundle(&reproducibility_bundle_record())
+            .expect("first reproducibility bundle");
+
+        let mut alternate_experiment = experiment_record();
+        alternate_experiment.experiment_id = "experiment_signal_trend_shadow_v2".to_string();
+        alternate_experiment.code_revision.revision = "def456".to_string();
+        registry
+            .upsert_experiment(&alternate_experiment)
+            .expect("alternate experiment");
+
+        let mut conflicting = reproducibility_bundle_record();
+        conflicting.experiment_id = alternate_experiment.experiment_id;
+        let error = registry
+            .upsert_reproducibility_bundle(&conflicting)
+            .expect_err("same bundle id with a different experiment should conflict");
+
+        assert!(matches!(
+            error,
+            ResearchRegistryError::IdentityConflict {
+                record_type: "research reproducibility bundle",
+                ..
+            }
+        ));
     }
 
     #[test]

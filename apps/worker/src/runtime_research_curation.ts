@@ -109,8 +109,20 @@ export function resolvePersistedCollectionRecord<T>(input: {
 }): T {
   try {
     return input.parseItem(input.payloadValue ?? input.fallbackValue);
-  } catch {
-    return input.parseItem(input.fallbackValue);
+  } catch (payloadError) {
+    try {
+      return input.parseItem(input.fallbackValue);
+    } catch (fallbackError) {
+      const payloadReason =
+        payloadError instanceof Error ? payloadError.message : "unknown-error";
+      const fallbackReason =
+        fallbackError instanceof Error
+          ? fallbackError.message
+          : "unknown-error";
+      throw new Error(
+        `runtime-research-curation-invalid-persisted-record: payload=${payloadReason}; fallback=${fallbackReason}`,
+      );
+    }
   }
 }
 
