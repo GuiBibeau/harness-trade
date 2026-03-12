@@ -5593,6 +5593,21 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY
         );
 
+        let backtest_request = json!({
+            "reportId": "backtest_alloc_dca_report",
+            "experimentId": "experiment_alloc_dca_backtest",
+            "replayCorpusId": "replay_corpus_sol_usdc_feature_cache",
+            "venueKey": "jupiter",
+            "pairSymbol": "SOL/USDC",
+            "marketType": "spot",
+            "windowMode": "rolling",
+            "trainingWindowObservations": 2,
+            "testingWindowObservations": 1,
+            "stepObservations": 1,
+            "purgeObservations": 0,
+            "baselineStrategies": ["flat_cash", "buy_and_hold"]
+        });
+
         let backtest_response = router
             .clone()
             .oneshot(
@@ -5601,23 +5616,7 @@ mod tests {
                     .uri("/api/internal/runtime/backtests")
                     .header("authorization", "Bearer runtime-service-secret")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({
-                            "reportId": "backtest_alloc_dca_report",
-                            "experimentId": "experiment_alloc_dca_backtest",
-                            "replayCorpusId": "replay_corpus_sol_usdc_feature_cache",
-                            "venueKey": "jupiter",
-                            "pairSymbol": "SOL/USDC",
-                            "marketType": "spot",
-                            "windowMode": "rolling",
-                            "trainingWindowObservations": 2,
-                            "testingWindowObservations": 1,
-                            "stepObservations": 1,
-                            "purgeObservations": 0,
-                            "baselineStrategies": ["flat_cash", "buy_and_hold"]
-                        })
-                        .to_string(),
-                    ))
+                    .body(Body::from(backtest_request.to_string()))
                     .expect("request"),
             )
             .await
@@ -5630,6 +5629,31 @@ mod tests {
             "{backtest_payload:?}"
         );
         assert_eq!(backtest_payload["report"]["promotionEligible"], json!(true));
+
+        let rerun_backtest_response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/internal/runtime/backtests")
+                    .header("authorization", "Bearer runtime-service-secret")
+                    .header("content-type", "application/json")
+                    .body(Body::from(backtest_request.to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(rerun_backtest_response.status(), StatusCode::OK);
+        let rerun_backtest_payload = read_json(rerun_backtest_response).await;
+        assert_eq!(
+            rerun_backtest_payload["report"]["reportId"],
+            json!("backtest_alloc_dca_report"),
+            "{rerun_backtest_payload:?}"
+        );
+        assert_eq!(
+            rerun_backtest_payload["report"]["promotionEligible"],
+            json!(true)
+        );
         let research_query_response = router
             .clone()
             .oneshot(
@@ -5647,6 +5671,13 @@ mod tests {
             research_query_payload["registry"]["reproducibilityBundles"][0]
                 ["reproducibilityBundleId"],
             json!("repro_backtest_alloc_dca_report")
+        );
+        assert_eq!(
+            research_query_payload["registry"]["reproducibilityBundles"]
+                .as_array()
+                .expect("reproducibility bundles")
+                .len(),
+            1
         );
 
         let mismatched_evidence_response = router
