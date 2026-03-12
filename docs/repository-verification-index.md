@@ -272,6 +272,29 @@ Verify:
 - research ingestion stays autonomous while paper and real-money promotion
   remain human-gated.
 
+### 3g. Strategy-lab synthesis verification
+
+For candidate-synthesis and hypothesis-generation work:
+
+```bash
+bun run lint
+bun run typecheck
+bun test tests/unit/runtime_research_synthesis.test.ts tests/unit/worker_runtime_research_synthesis_route.test.ts
+bun test tests/unit/worker_runtime_research_briefs_route.test.ts tests/unit/worker_runtime_internal_routes.test.ts tests/unit/worker_runtime_contracts.test.ts
+```
+
+Verify:
+
+- synthesis output contains an explicit hypothesis, expected mechanism, failure
+  modes, and a draft StrategySpec,
+- the candidate remains bounded to candidate or draft planning and does not
+  widen money-state controls,
+- the implementation plan is PR-sized and includes scaffold files, tests, and
+  validation commands,
+- the synthesized output links back to the exact research brief and citations,
+- the Worker admin route writes the hypothesis through the existing runtime
+  bridge instead of bypassing repo-owned contracts.
+
 ### 4. x402 and discovery verification
 
 Portal-side discovery:

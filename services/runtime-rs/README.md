@@ -236,6 +236,7 @@ Operators should use the Worker as the public control plane:
 
 - `GET /api/admin/ops/runtime`
 - `POST /api/admin/ops/runtime/research/briefs`
+- `POST /api/admin/ops/runtime/research/synthesis`
 - `POST /api/admin/ops/runtime/deployments/:deploymentId/pause`
 - `POST /api/admin/ops/runtime/deployments/:deploymentId/resume`
 - `POST /api/admin/ops/runtime/deployments/:deploymentId/kill`
@@ -253,6 +254,17 @@ bun run strategy-lab:research --profile latest_strategy_papers
 That command writes `.tmp/strategy-lab-research/brief.json` and
 `.tmp/strategy-lab-research/brief.md`, and the scheduled GitHub Actions
 workflow uploads the same artifacts every 12 hours.
+
+Candidate synthesis uses the same pattern, but stays manual rather than
+scheduled so weak ideas do not automatically turn into candidate issues:
+
+```bash
+bun run strategy-lab:synthesize --brief-file .tmp/strategy-lab-research/brief.json
+```
+
+That command writes `.tmp/strategy-lab-synthesis/synthesis.json` and
+`.tmp/strategy-lab-synthesis/synthesis.md`, including a draft hypothesis,
+StrategySpec scaffold, evaluation plan, and candidate-issue body.
 
 The runtime operator surface now includes allocator details for a deployment:
 
