@@ -78,7 +78,10 @@ import {
   upsertExecutionReceiptIdempotent,
 } from "./execution/repository";
 import { evaluateExecutionRolloutGate } from "./execution/rollout_gate";
-import { executeSwapViaRouter } from "./execution/router";
+import {
+  executeSwapViaRouter,
+  resolveExecutionAdapterRegistration,
+} from "./execution/router";
 import {
   buildExecSubmitIntentSummary,
   parseExecSubmitPayload,
@@ -1398,6 +1401,25 @@ const worker = {
             env,
           );
         }
+        if (parsed.value.schemaVersion === "v2" && spotSwap?.venueKey) {
+          const resolvedAdapter = resolveExecutionAdapterRegistration(
+            laneResolution.adapter,
+          );
+          if (
+            !resolvedAdapter ||
+            resolvedAdapter.venueKey !== spotSwap.venueKey
+          ) {
+            return withCors(
+              execErrorResponse({
+                code: "invalid-request",
+                details: {
+                  reason: `unsupported-venue-route:${spotSwap.venueKey}:${laneResolution.adapter}`,
+                },
+              }),
+              env,
+            );
+          }
+        }
 
         const submitPolicy = await evaluateExecutionSubmitPolicy({
           env,
@@ -1700,6 +1722,7 @@ const worker = {
 
             const result = await executeSwapViaRouter({
               env,
+              venueKey: spotSwap?.venueKey,
               execution,
               policy,
               rpc,
