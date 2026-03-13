@@ -31,6 +31,27 @@ const findUserByPrivyUserIdMock = mock(async () => ({
   degenAcknowledgedAt: null,
   createdAt: "2026-03-03T00:00:00.000Z",
 }));
+const findUserByIdMock = mock(async (_env: unknown, id: string) => ({
+  id,
+  privyUserId: `did:privy:${id}`,
+  onboardingStatus: "active",
+  profile: null,
+  signerType: "privy",
+  privyWalletId:
+    id === "user_runtime_managed" ? "wallet_runtime_managed" : "wallet_1",
+  walletAddress:
+    id === "user_runtime_managed"
+      ? "6F6A1zpGpRGmqrXpqgBFYGjC9WFo6iovrRVYoJNBHZqF"
+      : "11111111111111111111111111111111",
+  walletMigratedAt: "2026-03-03T00:00:00.000Z",
+  experienceLevel: "beginner",
+  levelSource: "auto",
+  onboardingCompletedAt: "2026-03-03T00:00:00.000Z",
+  onboardingVersion: 1,
+  feedSeedVersion: 1,
+  degenAcknowledgedAt: null,
+  createdAt: "2026-03-03T00:00:00.000Z",
+}));
 const upsertUserMock = mock(async () =>
   findUserByPrivyUserIdMock("did:privy:user_1"),
 );
@@ -58,6 +79,7 @@ mock.module("../../apps/worker/src/auth", () => ({
   requireUser: requireUserMock,
 }));
 mock.module("../../apps/worker/src/users_db", () => ({
+  findUserById: findUserByIdMock,
   findUserByPrivyUserId: findUserByPrivyUserIdMock,
   upsertUser: upsertUserMock,
   setUserWallet: setUserWalletMock,
@@ -149,6 +171,7 @@ describe("worker trade swap compatibility wrapper route", () => {
 
   beforeEach(() => {
     requireUserMock.mockClear();
+    findUserByIdMock.mockClear();
     findUserByPrivyUserIdMock.mockClear();
     upsertUserMock.mockClear();
     setUserWalletMock.mockClear();

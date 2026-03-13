@@ -2,6 +2,12 @@ import { Database } from "bun:sqlite";
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  ComputeBudgetProgram,
+  Keypair,
+  SystemProgram,
+  Transaction,
+} from "@solana/web3.js";
 import type { Env } from "../../apps/worker/src/types";
 import {
   createExecutionContextStub,
@@ -13,6 +19,27 @@ import {
 const requireUserMock = mock(async () => ({
   privyUserId: "did:privy:user_1",
   email: "user@example.com",
+}));
+const findUserByIdMock = mock(async (_env: unknown, id: string) => ({
+  id,
+  privyUserId: `did:privy:${id}`,
+  onboardingStatus: "active",
+  profile: null,
+  signerType: "privy",
+  privyWalletId:
+    id === "user_runtime_managed" ? "wallet_runtime_managed" : "wallet_1",
+  walletAddress:
+    id === "user_runtime_managed"
+      ? "6F6A1zpGpRGmqrXpqgBFYGjC9WFo6iovrRVYoJNBHZqF"
+      : "11111111111111111111111111111111",
+  walletMigratedAt: "2026-03-03T00:00:00.000Z",
+  experienceLevel: "beginner",
+  levelSource: "auto",
+  onboardingCompletedAt: "2026-03-03T00:00:00.000Z",
+  onboardingVersion: 1,
+  feedSeedVersion: 1,
+  degenAcknowledgedAt: null,
+  createdAt: "2026-03-03T00:00:00.000Z",
 }));
 const findUserByPrivyUserIdMock = mock(async () => ({
   id: "user_1",
@@ -38,46 +65,12 @@ const setUserWalletMock = mock(async () => {});
 const setUserProfileMock = mock(async () => {});
 const setUserOnboardingStatusMock = mock(async () => {});
 const setUserExperienceMock = mock(async () => {});
-const createPrivySolanaWalletMock = mock(async () => ({
-  walletId: "wallet_new",
-  address: "11111111111111111111111111111111",
-}));
-const getPrivyWalletAddressByIdMock = mock(
-  async () => "11111111111111111111111111111111",
-);
-const getPrivyWalletAddressMock = mock(
-  async () => "11111111111111111111111111111111",
-);
-const getPrivyUserByIdMock = mock(async () => ({
-  id: "did:privy:user_1",
-  linked_accounts: [],
-}));
-const signTransactionWithPrivyByIdMock = mock(async () => "signed-trigger-tx");
-const evaluateSafeLaneTransactionMock = mock(() => ({
-  ok: true,
-  profile: {
-    txSizeBytes: 128,
-    instructionCount: 2,
-    accountKeyCount: 6,
-    addressTableLookupCount: 0,
-    signatureCount: 1,
-    computeUnitLimit: 200_000,
-    computeUnitPriceMicroLamports: "5000",
-    estimatedFeeLamports: "6000",
-  },
-  limits: {
-    maxTxBytes: 1232,
-    maxInstructionCount: 24,
-    maxAccountKeys: 96,
-    maxComputeUnitLimit: 1_400_000,
-    maxEstimatedFeeLamports: "2000000",
-  },
-}));
 
 mock.module("../../apps/worker/src/auth", () => ({
   requireUser: requireUserMock,
 }));
 mock.module("../../apps/worker/src/users_db", () => ({
+  findUserById: findUserByIdMock,
   findUserByPrivyUserId: findUserByPrivyUserIdMock,
   upsertUser: upsertUserMock,
   setUserWallet: setUserWalletMock,
@@ -85,18 +78,31 @@ mock.module("../../apps/worker/src/users_db", () => ({
   setUserOnboardingStatus: setUserOnboardingStatusMock,
   setUserExperience: setUserExperienceMock,
 }));
-mock.module("../../apps/worker/src/privy", () => ({
-  createPrivySolanaWallet: createPrivySolanaWalletMock,
-  getPrivyWalletAddressById: getPrivyWalletAddressByIdMock,
-  getPrivyWalletAddress: getPrivyWalletAddressMock,
-  getPrivyUserById: getPrivyUserByIdMock,
-  signTransactionWithPrivyById: signTransactionWithPrivyByIdMock,
-}));
-mock.module("../../apps/worker/src/execution/safe_lane_policy", () => ({
-  evaluateSafeLaneTransaction: evaluateSafeLaneTransactionMock,
-}));
 
 const worker = (await import("../../apps/worker/src/index")).default;
+
+function buildSignedSafeLaneTxBase64(): string {
+  const payer = Keypair.generate();
+  const tx = new Transaction({
+    feePayer: payer.publicKey,
+    recentBlockhash: "11111111111111111111111111111111",
+  });
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }));
+  tx.add(
+    ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: 5_000,
+    }),
+  );
+  tx.add(
+    SystemProgram.transfer({
+      fromPubkey: payer.publicKey,
+      toPubkey: Keypair.generate().publicKey,
+      lamports: 1,
+    }),
+  );
+  tx.sign(payer);
+  return Buffer.from(tx.serialize()).toString("base64");
+}
 
 function createSqliteD1Adapter(db: Database): D1Database {
   return {
@@ -159,6 +165,7 @@ function createExecEnv(): { env: Env; sqlite: Database } {
     overrides: {
       WAITLIST_DB: createSqliteD1Adapter(sqlite),
       PRIVY_APP_ID: "privy-app-id",
+      PRIVY_APP_SECRET: "privy-app-secret",
       X402_EXEC_SUBMIT_PRICE_USD: "0.01",
       EXEC_RELAY_VALIDATE_BLOCKHASH: "0",
       JUPITER_BASE_URL: "https://jupiter.test",
@@ -353,24 +360,20 @@ function readRpcMethod(init?: RequestInit): string {
 
 beforeEach(() => {
   requireUserMock.mockClear();
+  findUserByIdMock.mockClear();
   findUserByPrivyUserIdMock.mockClear();
   upsertUserMock.mockClear();
   setUserWalletMock.mockClear();
   setUserProfileMock.mockClear();
   setUserOnboardingStatusMock.mockClear();
   setUserExperienceMock.mockClear();
-  createPrivySolanaWalletMock.mockClear();
-  getPrivyWalletAddressByIdMock.mockClear();
-  getPrivyWalletAddressMock.mockClear();
-  getPrivyUserByIdMock.mockClear();
-  signTransactionWithPrivyByIdMock.mockClear();
-  evaluateSafeLaneTransactionMock.mockClear();
   fetchHandler = null;
   globalThis.fetch = fetchMock as typeof fetch;
 });
 
 afterAll(() => {
   globalThis.fetch = originalFetch;
+  mock.restore();
 });
 
 describe("worker terminal open orders and Trigger lifecycle routes", () => {
@@ -552,6 +555,14 @@ describe("worker terminal open orders and Trigger lifecycle routes", () => {
             transaction: "cancel-trigger-tx",
             requestId: "cancel_req_1",
             order: "order_pubkey_1",
+          });
+        }
+        if (url.origin === "https://api.privy.io") {
+          expect(url.pathname).toBe("/v1/wallets/wallet_1/rpc");
+          return responseJson({
+            data: {
+              signed_transaction: buildSignedSafeLaneTxBase64(),
+            },
           });
         }
         if (url.origin === "https://rpc.test") {
