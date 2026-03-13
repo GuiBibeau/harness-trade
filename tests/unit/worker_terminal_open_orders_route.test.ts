@@ -20,63 +20,9 @@ const requireUserMock = mock(async () => ({
   privyUserId: "did:privy:user_1",
   email: "user@example.com",
 }));
-const findUserByIdMock = mock(async (_env: unknown, id: string) => ({
-  id,
-  privyUserId: `did:privy:${id}`,
-  onboardingStatus: "active",
-  profile: null,
-  signerType: "privy",
-  privyWalletId:
-    id === "user_runtime_managed" ? "wallet_runtime_managed" : "wallet_1",
-  walletAddress:
-    id === "user_runtime_managed"
-      ? "6F6A1zpGpRGmqrXpqgBFYGjC9WFo6iovrRVYoJNBHZqF"
-      : "11111111111111111111111111111111",
-  walletMigratedAt: "2026-03-03T00:00:00.000Z",
-  experienceLevel: "beginner",
-  levelSource: "auto",
-  onboardingCompletedAt: "2026-03-03T00:00:00.000Z",
-  onboardingVersion: 1,
-  feedSeedVersion: 1,
-  degenAcknowledgedAt: null,
-  createdAt: "2026-03-03T00:00:00.000Z",
-}));
-const findUserByPrivyUserIdMock = mock(async () => ({
-  id: "user_1",
-  privyUserId: "did:privy:user_1",
-  onboardingStatus: "active",
-  profile: null,
-  signerType: "privy",
-  privyWalletId: "wallet_1",
-  walletAddress: "11111111111111111111111111111111",
-  walletMigratedAt: "2026-03-03T00:00:00.000Z",
-  experienceLevel: "beginner",
-  levelSource: "auto",
-  onboardingCompletedAt: "2026-03-03T00:00:00.000Z",
-  onboardingVersion: 1,
-  feedSeedVersion: 1,
-  degenAcknowledgedAt: null,
-  createdAt: "2026-03-03T00:00:00.000Z",
-}));
-const upsertUserMock = mock(async () =>
-  findUserByPrivyUserIdMock("did:privy:user_1"),
-);
-const setUserWalletMock = mock(async () => {});
-const setUserProfileMock = mock(async () => {});
-const setUserOnboardingStatusMock = mock(async () => {});
-const setUserExperienceMock = mock(async () => {});
 
 mock.module("../../apps/worker/src/auth", () => ({
   requireUser: requireUserMock,
-}));
-mock.module("../../apps/worker/src/users_db", () => ({
-  findUserById: findUserByIdMock,
-  findUserByPrivyUserId: findUserByPrivyUserIdMock,
-  upsertUser: upsertUserMock,
-  setUserWallet: setUserWalletMock,
-  setUserProfile: setUserProfileMock,
-  setUserOnboardingStatus: setUserOnboardingStatusMock,
-  setUserExperience: setUserExperienceMock,
 }));
 
 const worker = (await import("../../apps/worker/src/index")).default;
@@ -153,13 +99,57 @@ function createExecEnv(): { env: Env; sqlite: Database } {
   sqlite
     .query("INSERT INTO waitlist (email, source) VALUES (?1, ?2)")
     .run("user@example.com", "unit-test");
-  const migrationPath = resolve(
-    import.meta.dir,
-    "..",
-    "..",
-    "apps/worker/migrations/0025_execution_fabric.sql",
-  );
-  sqlite.exec(readFileSync(migrationPath, "utf8"));
+  for (const migrationName of [
+    "0004_users_bots.sql",
+    "0005_user_profile.sql",
+    "0008_billing.sql",
+    "0014_user_onboarding_status.sql",
+    "0021_user_wallet_columns.sql",
+    "0023_user_experience_onboarding.sql",
+    "0025_execution_fabric.sql",
+  ]) {
+    const migrationPath = resolve(
+      import.meta.dir,
+      "..",
+      "..",
+      "apps/worker/migrations",
+      migrationName,
+    );
+    sqlite.exec(readFileSync(migrationPath, "utf8"));
+  }
+  sqlite
+    .query(
+      `
+        INSERT INTO users (
+          id,
+          privy_user_id,
+          onboarding_status,
+          signer_type,
+          privy_wallet_id,
+          wallet_address,
+          wallet_migrated_at,
+          experience_level,
+          level_source,
+          onboarding_completed_at,
+          onboarding_version,
+          feed_seed_version
+        ) VALUES (
+          'user_1',
+          'did:privy:user_1',
+          'active',
+          'privy',
+          'wallet_1',
+          '11111111111111111111111111111111',
+          '2026-03-03T00:00:00.000Z',
+          'beginner',
+          'auto',
+          '2026-03-03T00:00:00.000Z',
+          1,
+          1
+        )
+      `,
+    )
+    .run();
 
   const env = createWorkerLiveEnv({
     overrides: {
@@ -360,13 +350,6 @@ function readRpcMethod(init?: RequestInit): string {
 
 beforeEach(() => {
   requireUserMock.mockClear();
-  findUserByIdMock.mockClear();
-  findUserByPrivyUserIdMock.mockClear();
-  upsertUserMock.mockClear();
-  setUserWalletMock.mockClear();
-  setUserProfileMock.mockClear();
-  setUserOnboardingStatusMock.mockClear();
-  setUserExperienceMock.mockClear();
   fetchHandler = null;
   globalThis.fetch = fetchMock as typeof fetch;
 });
