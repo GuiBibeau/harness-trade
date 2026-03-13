@@ -18,11 +18,11 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function readsTruthyExecutionParam(value: unknown): boolean {
-  if (value === true) return true;
+function readsFalsyExecutionParam(value: unknown): boolean {
+  if (value === false) return true;
   if (typeof value !== "string") return false;
   const normalized = value.trim().toLowerCase();
-  return normalized === "1" || normalized === "true" || normalized === "on";
+  return normalized === "0" || normalized === "false" || normalized === "off";
 }
 
 function normalizeConfirmationStatus(
@@ -170,9 +170,9 @@ export async function executeJupiterConditionalSpotOrder(
     };
   }
 
-  const requireSimulation =
-    readsTruthyExecutionParam(input.execution?.params?.requireSimulation) ||
-    true;
+  const requireSimulation = !readsFalsyExecutionParam(
+    input.execution?.params?.requireSimulation,
+  );
   let simulatedAt: string | undefined;
   if (requireSimulation) {
     const sim = await input.rpc.simulateTransactionBase64(signedBase64, {
