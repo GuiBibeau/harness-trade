@@ -43,4 +43,5 @@
 
 - Before pushing a branch, make sure CI-impacting workflow and env changes are included in the same PR.
 - Before merging each PR into `main`, confirm required checks are green.
+- If the repo owner or operator explicitly authorizes merge in-thread, OpenAI or Codex review with no blocking findings can satisfy the final review gate without a separate human GitHub review.
 - Do not manually remap `dev` custom domains outside CI unless production is degraded and an emergency fix is required.

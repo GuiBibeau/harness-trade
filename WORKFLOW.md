@@ -59,6 +59,9 @@ Take an issue only when all of the following are true:
 
 When a run starts, add `agent-running`. When the PR is ready for review, remove
 `agent-running` and add `human-review`.
+The `human-review` label marks the merge gate. It can be cleared either by a
+human GitHub review or by an explicitly authorized agent merge after OpenAI or
+Codex review reports no blocking findings and all required checks are green.
 
 ## Branching and PR Rules
 
@@ -171,16 +174,17 @@ the target state transition:
 ## Approval Posture
 
 - This repo is operated in a high-trust mode for engineering execution.
-- Human review is still mandatory before merge.
-- Stop at `human-review`; do not auto-merge unless the repo policy changes in a
-  later issue.
+- Human GitHub review is preferred, but it is not mandatory when the repo owner
+  or operator explicitly authorizes agent merge in-thread.
+- An agent may merge from `human-review` when OpenAI or Codex review reports no
+  blocking findings and all required checks are green.
 - Prefer reversible changes and call out any deployment or rollout risk in the
   PR summary.
 
 Money-state approval boundaries:
 
 - Merging a PR does not authorize real-money promotion by itself.
-- `shadow` may begin only after human-reviewed code merge.
+- `shadow` may begin only after a merged PR.
 - `paper` requires explicit operator approval.
 - `limited_live` requires explicit human approval, allowlist changes, kill
   controls, and bounded canary notes.
