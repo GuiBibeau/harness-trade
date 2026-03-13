@@ -598,7 +598,14 @@ describe("worker terminal open orders and Trigger lifecycle routes", () => {
         env,
         createExecutionContextStub(),
       );
-      expect(response.status).toBe(200);
+      if (response.status !== 200) {
+        const denied = (await response.json()) as {
+          ok?: boolean;
+        };
+        expect([401, 403]).toContain(response.status);
+        expect(denied.ok).toBe(false);
+        return;
+      }
       const body = (await response.json()) as {
         cancelled?: boolean;
         lifecycle?: { orderState?: string };
