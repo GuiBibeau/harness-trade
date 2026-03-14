@@ -92,4 +92,16 @@ describe("flash liquidity substrate", () => {
       }),
     ).toThrow(/flash-liquidity-provider-disabled:marginfi/);
   });
+
+  test("fails closed when the settlement mint is not present in borrow legs", () => {
+    expect(() =>
+      buildFlashAtomicPlan({
+        intent: {
+          ...BASE_INTENT,
+          settlementMint: "USDx111111111111111111111111111111111111111",
+        },
+        env: {},
+      }),
+    ).toThrow(/flash-liquidity-settlement-mint-unmatched/);
+  });
 });

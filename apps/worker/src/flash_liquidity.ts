@@ -345,10 +345,10 @@ export function buildFlashAtomicPlan(input: {
   const settlementBorrowAmounts = borrowLegs
     .filter((leg) => leg.mint === settlementMint)
     .map((leg) => leg.amountAtomic);
-  const syntheticAmountAtomic =
-    settlementBorrowAmounts.length > 0
-      ? sumAtomicAmounts(settlementBorrowAmounts)
-      : (borrowLegs[0]?.amountAtomic ?? "0");
+  if (settlementBorrowAmounts.length < 1) {
+    throw new Error("flash-liquidity-settlement-mint-unmatched");
+  }
+  const syntheticAmountAtomic = sumAtomicAmounts(settlementBorrowAmounts);
 
   return {
     referenceId,
