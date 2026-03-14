@@ -182,6 +182,70 @@ describe("worker Mango execution adapter", () => {
     ).rejects.toThrow(/mango-account-snapshot-missing/);
   });
 
+  test("requires a healthy oracle on the traded Mango instrument", async () => {
+    const intent = buildPerpIntent();
+    intent.params = {
+      ...intent.params,
+      accountSnapshot: buildAccountSnapshot({
+        oracles: [
+          {
+            instrumentId: "BTC-PERP",
+            provider: "pyth",
+            status: "healthy",
+            priceQuote: "72000.10",
+            confidencePct: "0.10",
+            lastUpdatedSlot: 345,
+            lastUpdatedAt: "2026-03-14T04:59:58Z",
+            notes: ["fresh"],
+          },
+          {
+            instrumentId: "SOL-PERP",
+            provider: "pyth",
+            status: "stale",
+            priceQuote: "155.20",
+            confidencePct: "0.15",
+            lastUpdatedSlot: 300,
+            lastUpdatedAt: "2026-03-14T04:30:00Z",
+            notes: ["stale"],
+          },
+        ],
+      }),
+    };
+
+    await expect(
+      executeMangoIntent({
+        env: {} as Env,
+        runtimeMode: "paper",
+        policy: normalizePolicy({}),
+        rpc: {} as never,
+        jupiter: {} as never,
+        intent,
+        log: () => {},
+      }),
+    ).rejects.toThrow(/mango-oracle-health-missing/);
+  });
+
+  test("rejects malformed Mango sides that bypass submit-contract parsing", async () => {
+    const intent = buildPerpIntent() as unknown as {
+      side: string;
+      family: "perp_order";
+      marketType: "perp";
+    };
+    intent.side = "buy";
+
+    await expect(
+      executeMangoIntent({
+        env: {} as Env,
+        runtimeMode: "paper",
+        policy: normalizePolicy({}),
+        rpc: {} as never,
+        jupiter: {} as never,
+        intent: intent as never,
+        log: () => {},
+      }),
+    ).rejects.toThrow(/invalid-mango-perp-side/);
+  });
+
   test("rejects live mode for Mango rollout", async () => {
     await expect(
       executeMangoIntent({

@@ -163,8 +163,14 @@ function resolveReferencePriceQuote(input: {
   return Number.isFinite(oraclePrice) ? oraclePrice : null;
 }
 
-function hasHealthyOracle(account: RuntimeMarginAccountSnapshot): boolean {
-  return account.oracles.some((oracle) => oracle.status === "healthy");
+function hasHealthyOracleForInstrument(input: {
+  account: RuntimeMarginAccountSnapshot;
+  instrumentId: string;
+}): boolean {
+  return input.account.oracles.some(
+    (oracle) =>
+      oracle.instrumentId === input.instrumentId && oracle.status === "healthy",
+  );
 }
 
 export class MangoClient {
@@ -189,7 +195,12 @@ export class MangoClient {
     }
 
     const account = readAccountSnapshot(input.options ?? null);
-    if (!hasHealthyOracle(account)) {
+    if (
+      !hasHealthyOracleForInstrument({
+        account,
+        instrumentId: input.instrumentId,
+      })
+    ) {
       throw new Error("mango-oracle-health-missing");
     }
     const reduceOnly =

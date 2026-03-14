@@ -50,6 +50,30 @@ function readMangoOptions(
   return params;
 }
 
+function validateMangoSide(
+  intent: NonSwapExecutionIntent,
+): NonSwapExecutionIntent["side"] {
+  const side = String(intent.side ?? "").trim();
+  if (!side) {
+    throw new Error("invalid-mango-side");
+  }
+  if (intent.family === "clob_order") {
+    if (side === "buy" || side === "sell") {
+      return side;
+    }
+    throw new Error("invalid-mango-clob-side");
+  }
+  if (
+    side === "long" ||
+    side === "short" ||
+    side === "close_long" ||
+    side === "close_short"
+  ) {
+    return side;
+  }
+  throw new Error("invalid-mango-perp-side");
+}
+
 export async function executeMangoIntent(
   input: ExecuteMangoIntentInput,
 ): Promise<ExecuteSwapResult> {
@@ -77,23 +101,21 @@ export async function executeMangoIntent(
   if (input.runtimeMode === "live") {
     throw new Error("mango-live-mode-not-supported");
   }
-  if (!input.intent.side) {
-    throw new Error("invalid-mango-side");
-  }
+  const side = validateMangoSide(input.intent);
 
   const mango = input.mango ?? new MangoClient();
   const preview = mango.describeIntent({
     family: input.intent.family,
     instrumentId: input.intent.instrumentId,
     marketType: input.intent.marketType,
-    side: input.intent.side,
+    side,
     quantityAtomic: String(input.intent.quantityAtomic ?? ""),
     collateralAtomic: input.intent.collateralAtomic ?? null,
     options: readMangoOptions(input.intent),
   });
   const lifecycle = buildLifecycle({
     family: input.intent.family,
-    side: input.intent.side,
+    side,
     reduceOnly: preview.reduceOnly,
   });
   const usedQuote = mango.buildSyntheticQuote(preview);
