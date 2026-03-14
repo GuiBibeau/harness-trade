@@ -266,6 +266,43 @@ const BUILTIN_RUNTIME_VENUE_CAPABILITIES = [
   },
   {
     schemaVersion: "v1",
+    venueKey: "monaco",
+    displayName: "Monaco Protocol",
+    adapterKeys: ["monaco"],
+    marketTypes: ["prediction"],
+    orderTypes: ["market", "limit"],
+    intentFamilies: ["prediction_order"],
+    authModel: "privy_solana_wallet",
+    feeModel: "maker_taker_bps",
+    precision: {
+      priceDecimals: 4,
+      sizeDecimals: 6,
+      minOrderIncrement: "0.000001",
+      minQuoteNotionalUsd: "0.01",
+    },
+    sizeLimits: {
+      minNotionalUsd: "0.01",
+    },
+    latencyProfile: {
+      expectedQuoteMs: 250,
+      expectedSubmitMs: 600,
+      expectedSettlementMs: 5000,
+    },
+    settlementBehavior: "orderbook_partial",
+    lifecycle: {
+      supportsOrderLifecycle: true,
+      supportsPositionLifecycle: true,
+      requiresExternalOracle: false,
+      settlementModel: "position_account",
+    },
+    oracleRequirements: ["none"],
+    supportedModes: ["shadow"],
+    onboardingState: "candidate",
+    notes:
+      "Monaco has an active protocol repo with order, trade, matching-pool, and market-position client docs, but the previously prominent SDK repo is archived and the venue still depends on operator-managed market lifecycle and settlement flows. Keep it candidate-only until a later issue locks the maintained client path, operator authority model, and reconciliation fixtures.",
+  },
+  {
+    schemaVersion: "v1",
     venueKey: "phoenix",
     displayName: "Phoenix",
     adapterKeys: ["phoenix_orderbook"],
