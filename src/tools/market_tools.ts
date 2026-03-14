@@ -95,6 +95,14 @@ export function registerMarketTools(
       ? value
       : undefined;
 
+  const buildDFlowUrl = (path: string): URL => {
+    const normalizedBase = dflowMetadataBaseUrl.endsWith("/")
+      ? dflowMetadataBaseUrl
+      : `${dflowMetadataBaseUrl}/`;
+    const normalizedPath = path.replace(/^\/+/, "");
+    return new URL(normalizedPath, normalizedBase);
+  };
+
   const mapDFlowMarket = (record: Record<string, unknown>) => {
     const marketId =
       readToolString(record.ticker) ??
@@ -186,7 +194,7 @@ export function registerMarketTools(
   };
 
   const fetchDFlowJson = async (path: string): Promise<unknown> => {
-    const url = new URL(path, dflowMetadataBaseUrl);
+    const url = buildDFlowUrl(path);
     const response = await fetch(url.toString(), {
       method: "GET",
       headers: {
@@ -601,7 +609,12 @@ export function registerMarketTools(
         if (!marketId) {
           throw new Error("market-id-required");
         }
-        let market = await getDFlowMarketByMint(marketId);
+        let market: Awaited<ReturnType<typeof getDFlowMarketByMint>> = null;
+        try {
+          market = await getDFlowMarketByMint(marketId);
+        } catch {
+          market = null;
+        }
         if (!market) {
           const markets = await listDFlowMarkets();
           market =

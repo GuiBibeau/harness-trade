@@ -71,8 +71,11 @@ function buildRegistry() {
 
 test("market.prediction_markets_list supports DFlow discovery", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(
+  const originalBaseUrl = process.env.DFLOW_METADATA_API_BASE;
+  let requestUrl = "";
+  globalThis.fetch = (async (input) => {
+    requestUrl = String(input);
+    return new Response(
       JSON.stringify({
         markets: [
           {
@@ -97,9 +100,12 @@ test("market.prediction_markets_list supports DFlow discovery", async () => {
         status: 200,
         headers: { "content-type": "application/json" },
       },
-    )) as typeof fetch;
+    );
+  }) as typeof fetch;
 
   try {
+    process.env.DFLOW_METADATA_API_BASE =
+      "https://dev-prediction-markets-api.dflow.net/api/v1";
     const { registry, ctx } = buildRegistry();
     const result = (await registry.invoke(
       "market.prediction_markets_list",
@@ -118,55 +124,87 @@ test("market.prediction_markets_list supports DFlow discovery", async () => {
     expect(result.markets[0]?.noMint).toBe(
       "NoMint11111111111111111111111111111111",
     );
+    expect(requestUrl).toBe(
+      "https://dev-prediction-markets-api.dflow.net/api/v1/markets?status=active&limit=200",
+    );
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalBaseUrl === undefined) {
+      delete process.env.DFLOW_METADATA_API_BASE;
+    } else {
+      process.env.DFLOW_METADATA_API_BASE = originalBaseUrl;
+    }
   }
 });
 
-test("market.prediction_market_quote supports DFlow market-by-mint lookups", async () => {
+test("market.prediction_market_quote falls back to market list when DFlow by-mint lookup misses", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(
+  const originalBaseUrl = process.env.DFLOW_METADATA_API_BASE;
+  const requestUrls: string[] = [];
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    requestUrls.push(url);
+    if (url.includes("/markets/by-mint/")) {
+      return new Response(JSON.stringify({ error: "not_found" }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(
       JSON.stringify({
-        market: {
-          ticker: "PRES-2028",
-          title: "Will candidate X win in 2028?",
-          accounts: [
-            {
-              yesMint: "YesMint1111111111111111111111111111111",
-              noMint: "NoMint11111111111111111111111111111111",
-              settlementMint: "USDCMint11111111111111111111111111111",
-              yesBid: 0.49,
-              yesAsk: 0.52,
-              noBid: 0.47,
-              noAsk: 0.51,
-              openInterest: 5000,
-              volume: 2450,
-            },
-          ],
-        },
+        markets: [
+          {
+            ticker: "PRES-2028",
+            title: "Will candidate X win in 2028?",
+            accounts: [
+              {
+                yesMint: "YesMint1111111111111111111111111111111",
+                noMint: "NoMint11111111111111111111111111111111",
+                settlementMint: "USDCMint11111111111111111111111111111",
+                yesBid: 0.49,
+                yesAsk: 0.52,
+                noBid: 0.47,
+                noAsk: 0.51,
+                openInterest: 5000,
+                volume: 2450,
+              },
+            ],
+          },
+        ],
       }),
       {
         status: 200,
         headers: { "content-type": "application/json" },
       },
-    )) as typeof fetch;
+    );
+  }) as typeof fetch;
 
   try {
+    process.env.DFLOW_METADATA_API_BASE =
+      "https://dev-prediction-markets-api.dflow.net/api/v1";
     const { registry, ctx } = buildRegistry();
     const result = (await registry.invoke(
       "market.prediction_market_quote",
       ctx,
       {
         venue: "dflow",
-        marketId: "YesMint1111111111111111111111111111111",
+        marketId: "PRES-2028",
       },
     )) as { yesPrice: string; noPrice: string; liquidity: string };
 
     expect(result.yesPrice).toBe("0.52");
     expect(result.noPrice).toBe("0.51");
     expect(result.liquidity).toBe("7450");
+    expect(requestUrls).toEqual([
+      "https://dev-prediction-markets-api.dflow.net/api/v1/markets/by-mint/PRES-2028",
+      "https://dev-prediction-markets-api.dflow.net/api/v1/markets?status=active&limit=200",
+    ]);
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalBaseUrl === undefined) {
+      delete process.env.DFLOW_METADATA_API_BASE;
+    } else {
+      process.env.DFLOW_METADATA_API_BASE = originalBaseUrl;
+    }
   }
 });

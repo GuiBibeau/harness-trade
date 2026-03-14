@@ -377,6 +377,12 @@ async function readJson(response: Response, label: string): Promise<unknown> {
   return await response.json();
 }
 
+function buildDFlowUrl(path: string, baseUrl: string): URL {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const normalizedPath = path.replace(/^\/+/, "");
+  return new URL(normalizedPath, normalizedBase);
+}
+
 export class DFlowClient {
   private readonly fetchImpl: typeof fetch;
   private readonly metadataApiBase: string;
@@ -401,7 +407,7 @@ export class DFlowClient {
     status?: string;
     limit?: number;
   }): Promise<DFlowPredictionMarket[]> {
-    const url = new URL("/markets", this.metadataApiBase);
+    const url = buildDFlowUrl("markets", this.metadataApiBase);
     if (input?.status) {
       url.searchParams.set("status", input.status);
     }
@@ -431,8 +437,8 @@ export class DFlowClient {
     if (!normalizedMint) {
       throw new Error("dflow-outcome-mint-required");
     }
-    const url = new URL(
-      `/markets/by-mint/${encodeURIComponent(normalizedMint)}`,
+    const url = buildDFlowUrl(
+      `markets/by-mint/${encodeURIComponent(normalizedMint)}`,
       this.metadataApiBase,
     );
     const response = await this.fetchImpl(url.toString(), {
