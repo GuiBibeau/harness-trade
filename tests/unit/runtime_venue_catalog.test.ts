@@ -60,4 +60,31 @@ describe("runtime venue catalog", () => {
       ),
     ).toBe(true);
   });
+
+  test("adds Monaco as a candidate prediction-market venue with order and position lifecycle", () => {
+    const venue = getRuntimeVenueCapability("monaco");
+
+    expect(venue).not.toBeNull();
+    if (!venue) {
+      throw new Error("expected-monaco-capability");
+    }
+
+    expect(venue.marketTypes).toEqual(["prediction"]);
+    expect(venue.intentFamilies).toEqual(["prediction_order"]);
+    expect(venue.onboardingState).toBe("candidate");
+    expect(venue.supportedModes).toEqual(["shadow"]);
+    expect(runtimeVenueSupportsMode(venue, "shadow")).toBe(true);
+    expect(runtimeVenueSupportsMode(venue, "paper")).toBe(false);
+    expect(runtimeVenueSupportsIntentFamily(venue, "prediction_order")).toBe(
+      true,
+    );
+    expect(runtimeVenueSupportsIntentFamily(venue, "perp_order")).toBe(false);
+    expect(venue.notes).toContain("archived");
+    expect(venue.notes).toContain("market lifecycle");
+    expect(
+      listRuntimeVenueCapabilities().some(
+        (capability) => capability.venueKey === "monaco",
+      ),
+    ).toBe(true);
+  });
 });
