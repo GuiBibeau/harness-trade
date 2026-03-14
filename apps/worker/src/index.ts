@@ -6963,7 +6963,6 @@ function resolveTerminalProviderStatus(input: {
   return input.latest?.receipt?.errorCode ? "degraded" : "healthy";
 }
 
-<<<<<<< HEAD
 function readPersistedExecutionLifecycle(input: {
   latest: Awaited<ReturnType<typeof getExecutionLatestStatus>>;
 }): Record<string, unknown> | null {
