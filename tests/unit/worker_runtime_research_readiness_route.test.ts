@@ -462,6 +462,106 @@ describe("worker runtime research readiness routes", () => {
     }
   });
 
+  test("uses the quote mint for OpenBook buy smoke on USDC/USDT", async () => {
+    const { env, sqlite } = createOpsEnv();
+    try {
+      const response = await worker.fetch(
+        new Request(
+          "http://localhost/api/admin/ops/runtime/research/readiness/smoke",
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer admin-secret",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              subjectKind: "venue",
+              subjectKey: "openbook",
+              requestedBy: "codex",
+              venueKey: "openbook",
+              assetKey: "USDT",
+              pairSymbol: "USDC/USDT",
+              proofMode: "venue_tx_smoke",
+              smokeIntentFamily: "clob_order",
+              smokeOrderSide: "buy",
+            }),
+          },
+        ),
+        env,
+        createExecutionContextStub(),
+      );
+
+      expect(response.status).toBe(200);
+      const payload = (await response.json()) as {
+        ok: boolean;
+        run: {
+          inputMint: string;
+          outputMint: string;
+        };
+      };
+      expect(payload.ok).toBe(true);
+      expect(payload.run.inputMint).toBe(
+        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+      );
+      expect(payload.run.outputMint).toBe(
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      );
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  test("fails closed for unimplemented conditional smoke proofs", async () => {
+    const { env, sqlite } = createOpsEnv();
+    try {
+      const response = await worker.fetch(
+        new Request(
+          "http://localhost/api/admin/ops/runtime/research/readiness/smoke",
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer admin-secret",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              subjectKind: "venue",
+              subjectKey: "jupiter",
+              requestedBy: "codex",
+              venueKey: "jupiter",
+              assetKey: "SOL",
+              pairSymbol: "SOL/USDC",
+              proofMode: "venue_tx_smoke",
+              smokeIntentFamily: "conditional_spot_order",
+              smokeOrderSide: "sell",
+            }),
+          },
+        ),
+        env,
+        createExecutionContextStub(),
+      );
+
+      expect(response.status).toBe(200);
+      const payload = (await response.json()) as {
+        ok: boolean;
+        status: string;
+        run: {
+          errorMessage?: string;
+          metadata?: Record<string, unknown>;
+        };
+      };
+      expect(payload.ok).toBe(false);
+      expect(payload.status).toBe("blocked");
+      expect(payload.run.errorMessage).toContain(
+        "strategy-lab-readiness-canary-intent-family-not-implemented",
+      );
+      expect(payload.run.metadata?.smokeIntentFamily).toBe(
+        "conditional_spot_order",
+      );
+    } finally {
+      sqlite.close();
+    }
+  });
+
   test("tightens the venue on tx smoke failure", async () => {
     const { env, sqlite } = createOpsEnv({
       STRATEGY_LAB_READINESS_CANARY_DAILY_CAP_USD: "1",

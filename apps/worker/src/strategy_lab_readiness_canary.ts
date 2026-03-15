@@ -459,21 +459,25 @@ function resolveCanaryPairContext(
     throw new Error("strategy-lab-readiness-canary-pair-must-include-usdc");
   }
 
-  const outputMint =
+  const pairAssetMint =
     pair.baseMint === USDC_MINT ? pair.quoteMint : pair.baseMint;
   const inputMint =
-    smokeIntentFamily === "clob_order" && smokeOrderSide === "sell"
-      ? outputMint
+    smokeIntentFamily === "clob_order"
+      ? smokeOrderSide === "sell"
+        ? pair.baseMint
+        : pair.quoteMint
       : USDC_MINT;
   const effectiveOutputMint =
-    smokeIntentFamily === "clob_order" && smokeOrderSide === "sell"
-      ? USDC_MINT
-      : outputMint;
+    smokeIntentFamily === "clob_order"
+      ? smokeOrderSide === "sell"
+        ? pair.quoteMint
+        : pair.baseMint
+      : pairAssetMint;
   const assetKey =
     request.assetKey ??
     (request.subjectKind === "asset"
       ? request.subjectKey
-      : (TRADING_TOKEN_BY_MINT[outputMint]?.symbol ?? ""));
+      : (TRADING_TOKEN_BY_MINT[pairAssetMint]?.symbol ?? ""));
   if (!assetKey || assetKey === "USDC") {
     throw new Error("strategy-lab-readiness-canary-asset-unresolved");
   }
@@ -511,8 +515,8 @@ function resolveCanaryPairContext(
     assetKey,
     pairSymbol,
     adapterKey,
-    inputMint,
-    outputMint: effectiveOutputMint,
+      inputMint,
+      outputMint: effectiveOutputMint,
   };
 }
 
@@ -1365,6 +1369,22 @@ export async function runRuntimeResearchReadinessCanaryWorkflow(input: {
       walletCreated: wallet.created,
     },
   });
+  const smokeIntentFamily = readSmokeIntentFamily(input.request);
+  if (smokeIntentFamily === "conditional_spot_order") {
+    return await finalizeReadinessCanaryRun(input.env, {
+      runId,
+      status: "blocked",
+      runPatch: {
+        errorCode: "policy-denied",
+        errorMessage:
+          "strategy-lab-readiness-canary-intent-family-not-implemented:conditional_spot_order",
+        metadata: {
+          smokeIntentFamily,
+          smokeOrderSide: readSmokeOrderSide(input.request),
+        },
+      },
+    });
+  }
 
   const spendToday = await getStrategyLabReadinessCanaryDailySpendUsd(
     input.env.WAITLIST_DB,
@@ -1446,8 +1466,6 @@ export async function runRuntimeResearchReadinessCanaryWorkflow(input: {
           String(input.env.RPC_ENDPOINT ?? "").trim(),
         )
       : undefined;
-  const smokeIntentFamily = readSmokeIntentFamily(input.request);
-
   if (smokeIntentFamily === "clob_order") {
     try {
       return await runOpenBookVenueTxSmoke({
