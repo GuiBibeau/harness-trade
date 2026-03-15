@@ -409,6 +409,108 @@ describe("worker runtime research readiness routes", () => {
     }
   });
 
+  test("allows bounded OpenBook venue smoke even though the venue is not generally live-enabled", async () => {
+    const { env, sqlite } = createOpsEnv();
+    try {
+      const response = await worker.fetch(
+        new Request(
+          "http://localhost/api/admin/ops/runtime/research/readiness/smoke",
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer admin-secret",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              subjectKind: "venue",
+              subjectKey: "openbook",
+              requestedBy: "codex",
+              venueKey: "openbook",
+              assetKey: "SOL",
+              pairSymbol: "SOL/USDC",
+              proofMode: "venue_tx_smoke",
+              smokeIntentFamily: "clob_order",
+              smokeOrderSide: "buy",
+              tightenOnFailure: true,
+              failureControlMode: "disable_live",
+            }),
+          },
+        ),
+        env,
+        createExecutionContextStub(),
+      );
+
+      expect(response.status).toBe(200);
+      const payload = (await response.json()) as {
+        ok: boolean;
+        status: string;
+        run: {
+          venueKey: string;
+          metadata?: Record<string, unknown>;
+          evidenceRefs: Array<{ kind: string }>;
+        };
+      };
+      expect(payload.ok).toBe(true);
+      expect(payload.status).toBe("success");
+      expect(payload.run.venueKey).toBe("openbook");
+      expect(payload.run.evidenceRefs[0]?.kind).toBe("live_canary");
+      expect(payload.run.metadata?.proofMode).toBe("venue_tx_smoke");
+      expect(payload.run.metadata?.smokeIntentFamily).toBe("clob_order");
+      expect(payload.run.metadata?.smokeOrderSide).toBe("buy");
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  test("uses the quote mint for OpenBook buy smoke on USDC/USDT", async () => {
+    const { env, sqlite } = createOpsEnv();
+    try {
+      const response = await worker.fetch(
+        new Request(
+          "http://localhost/api/admin/ops/runtime/research/readiness/smoke",
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer admin-secret",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              subjectKind: "venue",
+              subjectKey: "openbook",
+              requestedBy: "codex",
+              venueKey: "openbook",
+              assetKey: "USDT",
+              pairSymbol: "USDC/USDT",
+              proofMode: "venue_tx_smoke",
+              smokeIntentFamily: "clob_order",
+              smokeOrderSide: "buy",
+            }),
+          },
+        ),
+        env,
+        createExecutionContextStub(),
+      );
+
+      expect(response.status).toBe(200);
+      const payload = (await response.json()) as {
+        ok: boolean;
+        run: {
+          inputMint: string;
+          outputMint: string;
+        };
+      };
+      expect(payload.ok).toBe(true);
+      expect(payload.run.inputMint).toBe(
+        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+      );
+      expect(payload.run.outputMint).toBe(
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      );
+    } finally {
+      sqlite.close();
+    }
+  });
+
   test("runs a Jupiter trigger venue tx smoke and records the smoke intent", async () => {
     const { env, sqlite } = createOpsEnv();
     try {

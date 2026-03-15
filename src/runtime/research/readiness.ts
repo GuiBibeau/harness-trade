@@ -82,7 +82,8 @@ export type RuntimeResearchReadinessCanaryRequest = {
 
 export type RuntimeResearchVenueTxSmokeIntentFamily =
   | "spot_swap"
-  | "conditional_spot_order";
+  | "conditional_spot_order"
+  | "clob_order";
 
 type ReadinessContext = {
   subjectKind: "venue" | "asset";
@@ -369,7 +370,8 @@ export function parseRuntimeResearchReadinessCanaryRequest(
   if (
     smokeIntentFamilyValue &&
     smokeIntentFamilyValue !== "spot_swap" &&
-    smokeIntentFamilyValue !== "conditional_spot_order"
+    smokeIntentFamilyValue !== "conditional_spot_order" &&
+    smokeIntentFamilyValue !== "clob_order"
   ) {
     throw new Error(
       "invalid-runtime-research-readiness-canary-smoke-intent-family",
@@ -401,7 +403,8 @@ export function parseRuntimeResearchReadinessCanaryRequest(
       : undefined;
   const smokeIntentFamily =
     smokeIntentFamilyValue === "spot_swap" ||
-    smokeIntentFamilyValue === "conditional_spot_order"
+    smokeIntentFamilyValue === "conditional_spot_order" ||
+    smokeIntentFamilyValue === "clob_order"
       ? smokeIntentFamilyValue
       : undefined;
   const smokeOrderSide =
@@ -461,7 +464,6 @@ export function parseRuntimeResearchVenueTxSmokeRequest(
   return {
     ...request,
     proofMode: "venue_tx_smoke",
-    smokeIntentFamily: request.smokeIntentFamily ?? "spot_swap",
     triggerSource: request.triggerSource ?? "manual",
     tightenOnFailure: request.tightenOnFailure ?? true,
     failureControlMode: request.failureControlMode ?? "disable_live",

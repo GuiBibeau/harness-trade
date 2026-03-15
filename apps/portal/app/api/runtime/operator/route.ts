@@ -804,7 +804,8 @@ export async function POST(request: Request) {
           ? { targetNotionalUsd: readString(payload.targetNotionalUsd) }
           : {}),
         ...(payload.smokeIntentFamily === "spot_swap" ||
-        payload.smokeIntentFamily === "conditional_spot_order"
+        payload.smokeIntentFamily === "conditional_spot_order" ||
+        payload.smokeIntentFamily === "clob_order"
           ? { smokeIntentFamily: payload.smokeIntentFamily }
           : {}),
         ...(payload.smokeOrderSide === "buy" ||
