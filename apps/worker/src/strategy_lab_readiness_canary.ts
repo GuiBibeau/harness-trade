@@ -492,7 +492,8 @@ function resolveCanaryPairContext(
       return (
         registration !== null &&
         registration.venueKey === venueKey &&
-        (registration.supportedModes.includes("live") || allowSmokeLiveBypass) &&
+        (registration.supportedModes.includes("live") ||
+          allowSmokeLiveBypass) &&
         registration.supportedIntentFamilies.includes(smokeIntentFamily)
       );
     });
@@ -894,7 +895,7 @@ async function finalizeReadinessCanaryRun(
             runPatch && "errorMessage" in runPatch
               ? (runPatch.errorMessage as string | undefined)
               : undefined,
-    }),
+        }),
   };
 }
 
