@@ -179,8 +179,7 @@ async function seedPredictionRequest(input: {
   const instrumentId = input.instrumentId ?? "PRES-2028";
   const instrumentLabel =
     input.instrumentLabel ?? "Will candidate X win in 2028?";
-  const outcomeId =
-    input.outcomeId ?? "YesMint1111111111111111111111111111111";
+  const outcomeId = input.outcomeId ?? "YesMint1111111111111111111111111111111";
   const payloadHash = `hash-${input.requestId}`;
   const nowIso = "2026-03-14T00:00:00.000Z";
   const reservation = await reserveExecutionSubmitRequest({
