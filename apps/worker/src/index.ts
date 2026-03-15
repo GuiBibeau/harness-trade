@@ -7776,13 +7776,7 @@ async function listTerminalPredictionPositionsForActor(input: {
   env: Env;
   actorId: string;
 }): Promise<TerminalPredictionPositionView[]> {
-  const requests = (
-    await listExecutionRequestsByActor(input.env.WAITLIST_DB, {
-      actorId: input.actorId,
-      mode: "privy_execute",
-      limit: 200,
-    })
-  )
+  const requests = (await listTerminalPredictionRequestsForActor(input))
     .filter((entry) => {
       const intent = isRecord(entry.metadata?.intent)
         ? entry.metadata.intent
@@ -7824,6 +7818,7 @@ async function listTerminalPredictionPositionsForActor(input: {
       request.requestId,
     );
     if (!latest) continue;
+    if (!isSuccessfulTerminalPredictionRequest(latest)) continue;
     const intent = isRecord(latest.request.metadata?.intent)
       ? latest.request.metadata.intent
       : null;
@@ -7994,6 +7989,34 @@ async function listTerminalPredictionPositionsForActor(input: {
   return positions.sort((a, b) =>
     String(b.lastUpdatedAt ?? "").localeCompare(String(a.lastUpdatedAt ?? "")),
   );
+}
+
+async function listTerminalPredictionRequestsForActor(input: {
+  env: Env;
+  actorId: string;
+}): Promise<ExecutionRequestRecord[]> {
+  const requests: ExecutionRequestRecord[] = [];
+  const pageSize = 200;
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await listExecutionRequestsByActor(input.env.WAITLIST_DB, {
+      actorId: input.actorId,
+      mode: "privy_execute",
+      limit: pageSize,
+      offset,
+    });
+    requests.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return requests;
+}
+
+function isSuccessfulTerminalPredictionRequest(
+  latest: Awaited<ReturnType<typeof getExecutionLatestStatus>>,
+): boolean {
+  const terminalStatus = readTrimmedString(
+    latest?.receipt?.finalizedStatus ?? latest?.request.status,
+  )?.toLowerCase();
+  return terminalStatus === "landed" || terminalStatus === "finalized";
 }
 
 function buildTerminalPredictionRequestSummary(

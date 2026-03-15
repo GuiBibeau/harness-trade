@@ -2,6 +2,11 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { reserveExecutionSubmitRequest } from "../../apps/worker/src/execution/idempotency";
+import {
+  updateExecutionRequestStatus,
+  upsertExecutionReceiptIdempotent,
+} from "../../apps/worker/src/execution/repository";
 import type { Env } from "../../apps/worker/src/types";
 import {
   createExecutionContextStub,
@@ -156,6 +161,126 @@ function buildDflowMarket(resolved: boolean) {
       },
     },
   };
+}
+
+async function seedPredictionRequest(input: {
+  env: Env;
+  actorId?: string;
+  requestId: string;
+  idempotencyKey: string;
+  instrumentId?: string;
+  instrumentLabel?: string;
+  outcomeId?: string;
+  side: "buy_yes" | "buy_no" | "sell_yes" | "sell_no";
+  quantityAtomic: string;
+  status: "finalized" | "landed" | "failed" | "rejected";
+}): Promise<void> {
+  const actorId = input.actorId ?? "user_1";
+  const instrumentId = input.instrumentId ?? "PRES-2028";
+  const instrumentLabel =
+    input.instrumentLabel ?? "Will candidate X win in 2028?";
+  const outcomeId =
+    input.outcomeId ?? "YesMint1111111111111111111111111111111";
+  const payloadHash = `hash-${input.requestId}`;
+  const nowIso = "2026-03-14T00:00:00.000Z";
+  const reservation = await reserveExecutionSubmitRequest({
+    db: input.env.WAITLIST_DB,
+    requestId: input.requestId,
+    idempotencyKey: input.idempotencyKey,
+    actorType: "privy_user",
+    actorId,
+    mode: "privy_execute",
+    lane: "safe",
+    payloadHash,
+    metadata: {
+      source: "PREDICTION_TICKET",
+      reason: `seed:${input.requestId}`,
+      intent: {
+        family: "prediction_order",
+        marketType: "prediction",
+        venueKey: "dflow",
+        instrumentId,
+        instrumentLabel,
+        side: input.side,
+        outcomeId,
+        quantityAtomic: input.quantityAtomic,
+      },
+      terminal: {
+        workflow: "prediction",
+        executionMode: "paper",
+      },
+    },
+    nowIso,
+  });
+  if (reservation.result !== "created") {
+    throw new Error(`unexpected-seed-reservation:${reservation.result}`);
+  }
+  await updateExecutionRequestStatus(input.env.WAITLIST_DB, {
+    requestId: input.requestId,
+    status: "validated",
+    statusReason: null,
+    nowIso,
+  });
+  if (input.status === "rejected") {
+    await updateExecutionRequestStatus(input.env.WAITLIST_DB, {
+      requestId: input.requestId,
+      status: "rejected",
+      statusReason: "seed-rejected",
+      nowIso,
+    });
+  } else {
+    await updateExecutionRequestStatus(input.env.WAITLIST_DB, {
+      requestId: input.requestId,
+      status: "dispatched",
+      statusReason: null,
+      nowIso,
+    });
+    await updateExecutionRequestStatus(input.env.WAITLIST_DB, {
+      requestId: input.requestId,
+      status: input.status === "finalized" ? "landed" : input.status,
+      statusReason:
+        input.status === "finalized" || input.status === "landed"
+          ? null
+          : `seed-${input.status}`,
+      nowIso,
+    });
+    if (input.status === "finalized") {
+      await updateExecutionRequestStatus(input.env.WAITLIST_DB, {
+        requestId: input.requestId,
+        status: "finalized",
+        statusReason: null,
+        nowIso,
+      });
+    }
+  }
+  if (input.status === "finalized" || input.status === "landed") {
+    await upsertExecutionReceiptIdempotent(input.env.WAITLIST_DB, {
+      requestId: input.requestId,
+      receiptId: `receipt-${input.requestId}`,
+      finalizedStatus: input.status,
+      lane: "safe",
+      provider: "dflow",
+      receipt: {
+        mode: "privy_execute",
+        route: "dflow",
+        outcome: input.status,
+        lifecycle: {
+          fillState: "filled",
+          positionState: input.side.startsWith("buy") ? "open" : "closed",
+          settlementState: "confirmed",
+        },
+        prediction: {
+          instrumentId,
+          instrumentLabel,
+          outcomeId,
+          side: input.side,
+          quantityAtomic: input.quantityAtomic,
+        },
+      },
+      readyAt: nowIso,
+      nowIso,
+    });
+  }
 }
 
 const originalFetch = global.fetch;
@@ -380,6 +505,102 @@ describe("worker terminal prediction routes", () => {
       expect(closedPositionsBody.positions?.[0]?.settlementState).toBe(
         "redeemed",
       );
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  test("prediction positions ignore failed requests that never finalized", async () => {
+    const { env, sqlite } = createExecEnv();
+    try {
+      await seedPredictionRequest({
+        env,
+        requestId: "pred-success-1",
+        idempotencyKey: "pred-success-1",
+        side: "buy_yes",
+        quantityAtomic: "1000000",
+        status: "finalized",
+      });
+      await seedPredictionRequest({
+        env,
+        requestId: "pred-failed-1",
+        idempotencyKey: "pred-failed-1",
+        side: "buy_yes",
+        quantityAtomic: "9000000",
+        status: "failed",
+      });
+
+      global.fetch = mock(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/markets/by-mint/")) {
+          return new Response(
+            JSON.stringify({ market: buildDflowMarket(false) }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        throw new Error(`unexpected-fetch:${url}`);
+      }) as typeof fetch;
+
+      const positionsResponse = await worker.fetch(
+        new Request("http://localhost/api/terminal/prediction-positions", {
+          headers: { authorization: "Bearer test" },
+        }),
+        env,
+        createExecutionContextStub(),
+      );
+      expect(positionsResponse.status).toBe(200);
+      const positionsBody = (await positionsResponse.json()) as {
+        positions?: Array<{ netQuantityAtomic?: string }>;
+      };
+      expect(positionsBody.positions?.[0]?.netQuantityAtomic).toBe("1000000");
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  test("prediction positions replay all actor history beyond the first 200 requests", async () => {
+    const { env, sqlite } = createExecEnv();
+    try {
+      for (let index = 0; index < 205; index += 1) {
+        await seedPredictionRequest({
+          env,
+          requestId: `pred-history-${index}`,
+          idempotencyKey: `pred-history-${index}`,
+          side: "buy_yes",
+          quantityAtomic: "1",
+          status: "finalized",
+        });
+      }
+
+      global.fetch = mock(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/markets/by-mint/")) {
+          return new Response(
+            JSON.stringify({ market: buildDflowMarket(false) }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        throw new Error(`unexpected-fetch:${url}`);
+      }) as typeof fetch;
+
+      const positionsResponse = await worker.fetch(
+        new Request("http://localhost/api/terminal/prediction-positions", {
+          headers: { authorization: "Bearer test" },
+        }),
+        env,
+        createExecutionContextStub(),
+      );
+      expect(positionsResponse.status).toBe(200);
+      const positionsBody = (await positionsResponse.json()) as {
+        positions?: Array<{ netQuantityAtomic?: string }>;
+      };
+      expect(positionsBody.positions?.[0]?.netQuantityAtomic).toBe("205");
     } finally {
       sqlite.close();
     }
