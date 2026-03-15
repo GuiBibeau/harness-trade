@@ -428,7 +428,7 @@ function allowsVenueTxSmokeLiveBypass(
     return venueKey === "raydium" || venueKey === "orca";
   }
   if (smokeIntentFamily === "clob_order") {
-    return venueKey === "openbook";
+    return venueKey === "openbook" || venueKey === "mango";
   }
   return false;
 }
@@ -3044,6 +3044,37 @@ export async function runRuntimeResearchReadinessCanaryWorkflow(input: {
       drift,
     });
   }
+  if (smokeIntentFamily === "clob_order" && context.venueKey === "mango") {
+    try {
+      return await runMangoVenueTxSmoke({
+        env: input.env,
+        request: input.request,
+        context,
+        config,
+        wallet,
+        runId,
+        submissionPath,
+        rpc,
+      });
+    } catch (error) {
+      return await finalizeReadinessCanaryRun(input.env, {
+        runId,
+        status: "failed",
+        runPatch: {
+          errorCode: normalizeExecutionErrorCode({
+            error,
+            fallback: "submission-failed",
+          }),
+          errorMessage: executionErrorMessage(error),
+          metadata: {
+            submissionPath,
+            smokeIntentFamily,
+            smokeOrderSide: readSmokeOrderSide(input.request),
+          },
+        },
+      });
+    }
+  }
   if (smokeIntentFamily === "clob_order") {
     try {
       return await runOpenBookVenueTxSmoke({
@@ -3353,6 +3384,179 @@ export async function runRuntimeResearchReadinessCanaryWorkflow(input: {
         errorMessage: executionErrorMessage(error),
         metadata: {
           submissionPath,
+        },
+      },
+    });
+  }
+}
+
+async function runMangoVenueTxSmoke(input: {
+  env: Env;
+  request: RuntimeResearchReadinessCanaryRequest;
+  context: CanaryPairContext;
+  config: StrategyLabReadinessCanaryConfig;
+  wallet: StrategyLabReadinessCanaryWallet;
+  runId: string;
+  submissionPath: {
+    venueKey: string;
+    adapterKey: string;
+    lane: string;
+    adapter: string;
+  };
+  rpc: SolanaRpc;
+}): Promise<RuntimeResearchReadinessCanaryWorkflowResult> {
+  const rpcEndpoint = String(input.env.RPC_ENDPOINT ?? "").trim();
+  if (!rpcEndpoint) {
+    return await finalizeReadinessCanaryRun(input.env, {
+      runId: input.runId,
+      status: "failed",
+      runPatch: {
+        errorCode: "submission-failed",
+        errorMessage: "rpc-endpoint-missing",
+      },
+    });
+  }
+
+  const depositAmountAtomic = "1000000";
+  const runtimeBalancePolicy = await evaluatePrivyRuntimeBalancePolicy({
+    env: input.env,
+    lane: "safe",
+    walletAddress: input.wallet.walletAddress,
+    inputMint: USDC_MINT,
+    amountAtomic: depositAmountAtomic,
+    minSolReserveLamports: input.config.minSolReserveLamports,
+    rpc: input.rpc,
+    runtimeDefaults: null,
+  });
+  if (!runtimeBalancePolicy.ok) {
+    return await finalizeReadinessCanaryRun(input.env, {
+      runId: input.runId,
+      status: "blocked",
+      runPatch: {
+        errorCode: "policy-denied",
+        errorMessage: runtimeBalancePolicy.reason,
+        metadata: {
+          submissionPath: input.submissionPath,
+          smokeIntentFamily: "clob_order",
+          runtimePolicy: runtimeBalancePolicy.metadata,
+        },
+      },
+    });
+  }
+
+  const beforeWalletUsdcAtomic = await input.rpc.getTokenBalanceAtomic(
+    input.wallet.walletAddress,
+    USDC_MINT,
+  );
+
+  try {
+    const { runMangoLiveUsdcRoundTrip } = await import("./mango_live");
+    const roundTrip = await runMangoLiveUsdcRoundTrip({
+      env: input.env,
+      rpcEndpoint,
+      walletId: input.wallet.walletId,
+      walletAddress: input.wallet.walletAddress,
+      depositAmountAtomic,
+    });
+
+    const [createTransaction, depositTransaction, withdrawTransaction] =
+      await Promise.all([
+        roundTrip.createSignature
+          ? input.rpc.getTransactionParsed(roundTrip.createSignature, {
+              commitment: "confirmed",
+            })
+          : Promise.resolve(null),
+        input.rpc.getTransactionParsed(roundTrip.depositSignature, {
+          commitment: "confirmed",
+        }),
+        input.rpc.getTransactionParsed(roundTrip.withdrawSignature, {
+          commitment: "confirmed",
+        }),
+      ]);
+    const createFeeLamports = roundTrip.createSignature
+      ? readReconciliationFeeLamports(createTransaction)
+      : 0n;
+    const depositFeeLamports =
+      readReconciliationFeeLamports(depositTransaction);
+    const withdrawFeeLamports =
+      readReconciliationFeeLamports(withdrawTransaction);
+    const afterWalletUsdcAtomic = await input.rpc.getTokenBalanceAtomic(
+      input.wallet.walletAddress,
+      USDC_MINT,
+    );
+    const walletDeltaAtomic = afterWalletUsdcAtomic - beforeWalletUsdcAtomic;
+    const reconciliationPassed =
+      readTransactionError(createTransaction) === null &&
+      readTransactionError(depositTransaction) === null &&
+      readTransactionError(withdrawTransaction) === null &&
+      (walletDeltaAtomic < 0n ? -walletDeltaAtomic : walletDeltaAtomic) <= 10n;
+
+    return await finalizeReadinessCanaryRun(input.env, {
+      runId: input.runId,
+      status: reconciliationPassed ? "success" : "failed",
+      runPatch: {
+        receiptId: `receipt_${input.runId.slice(-16)}`,
+        signature: roundTrip.depositSignature,
+        ...(reconciliationPassed
+          ? {}
+          : {
+              errorCode: "strategy-lab-readiness-canary-reconciliation-failed",
+              errorMessage:
+                "strategy-lab-readiness-canary-mango-roundtrip-not-reconciled",
+            }),
+        reconciliation: {
+          status: reconciliationPassed ? "passed" : "failed",
+          actualOutputAtomic: walletDeltaAtomic.toString(),
+          minExpectedOutAtomic: "0",
+          notes: [
+            "smokeIntentFamily=clob_order",
+            `createdAccount=${roundTrip.createdAccount ? "1" : "0"}`,
+            `depositAmountAtomic=${roundTrip.depositAmountAtomic}`,
+            `account=${roundTrip.accountAddress}`,
+            `feesLamports=${(
+              createFeeLamports + depositFeeLamports + withdrawFeeLamports
+            ).toString()}`,
+          ],
+        },
+        evidenceRefs: [
+          ...(roundTrip.createSignature
+            ? [
+                {
+                  kind: "account_setup",
+                  ref: `signature:${roundTrip.createSignature}`,
+                },
+              ]
+            : []),
+          {
+            kind: "live_canary",
+            ref: `signature:${roundTrip.depositSignature}`,
+          },
+          {
+            kind: "cleanup_tx",
+            ref: `signature:${roundTrip.withdrawSignature}`,
+          },
+        ],
+        metadata: {
+          submissionPath: input.submissionPath,
+          smokeIntentFamily: "clob_order",
+          collateralMint: USDC_MINT,
+          roundTrip: asJsonObject(roundTrip),
+        },
+      },
+    });
+  } catch (error) {
+    return await finalizeReadinessCanaryRun(input.env, {
+      runId: input.runId,
+      status: "failed",
+      runPatch: {
+        errorCode: normalizeExecutionErrorCode({
+          error,
+          fallback: "submission-failed",
+        }),
+        errorMessage: executionErrorMessage(error),
+        metadata: {
+          submissionPath: input.submissionPath,
+          smokeIntentFamily: "clob_order",
         },
       },
     });
