@@ -328,6 +328,7 @@ export async function listExecutionRequestsByActor(
     actorId: string;
     mode?: ExecutionMode;
     limit?: number;
+    offset?: number;
   },
 ): Promise<ExecutionRequestRecord[]> {
   const actorId = input.actorId.trim();
@@ -336,6 +337,7 @@ export async function listExecutionRequestsByActor(
     1,
     Math.min(200, Math.floor(input.limit ?? 50)),
   );
+  const offset = Math.max(0, Math.floor(input.offset ?? 0));
   const mode = input.mode?.trim() || null;
   const rows = mode
     ? ((await db
@@ -363,10 +365,10 @@ export async function listExecutionRequestsByActor(
           WHERE actor_id = ?1
             AND mode = ?2
           ORDER BY received_at DESC
-          LIMIT ?3
+          LIMIT ?3 OFFSET ?4
           `,
         )
-        .bind(actorId, mode, boundedLimit)
+        .bind(actorId, mode, boundedLimit, offset)
         .all()) as { results?: unknown[] })
     : ((await db
         .prepare(
@@ -392,10 +394,10 @@ export async function listExecutionRequestsByActor(
           FROM execution_requests
           WHERE actor_id = ?1
           ORDER BY received_at DESC
-          LIMIT ?2
+          LIMIT ?2 OFFSET ?3
           `,
         )
-        .bind(actorId, boundedLimit)
+        .bind(actorId, boundedLimit, offset)
         .all()) as { results?: unknown[] });
   const items = Array.isArray(rows.results) ? rows.results : [];
   return items.filter(isRecord).map((row) => mapExecutionRequestRow(row));
