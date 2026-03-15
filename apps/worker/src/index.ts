@@ -7919,6 +7919,7 @@ function parseTerminalPerpOrderPayload(input: {
     readTrimmedString(input.payload.instrumentLabel) ?? instrumentId;
   const side = parseTerminalPerpOrderSide(input.payload.side);
   const quantityAtomic = readTrimmedString(input.payload.quantityAtomic);
+  const quantityAtomicValue = readAtomicBigInt(quantityAtomic);
   const collateralAtomic = readTrimmedString(input.payload.collateralAtomic);
   const orderType = parseTerminalPerpOrderType(input.payload.orderType);
   const timeInForce = parseTerminalPerpTimeInForce(input.payload.timeInForce);
@@ -7939,7 +7940,8 @@ function parseTerminalPerpOrderPayload(input: {
     !instrumentLabel ||
     !side ||
     !quantityAtomic ||
-    readAtomicBigInt(quantityAtomic) === null
+    quantityAtomicValue === null ||
+    quantityAtomicValue <= 0n
   ) {
     throw new Error("invalid-terminal-perp-order");
   }
@@ -7984,6 +7986,41 @@ function parseTerminalPerpOrderPayload(input: {
       orderType === "trigger" && triggerPriceAtomic ? triggerPriceAtomic : null,
     source,
     reason,
+  };
+}
+
+function parseTerminalPerpPositionHint(input: {
+  value: unknown;
+  instrumentId: string;
+}): {
+  signedQuantityAtomic: string;
+  collateralAtomic: string;
+  averageEntryPrice: number | null;
+} | null {
+  if (!isRecord(input.value)) return null;
+  if (readTrimmedString(input.value.instrumentId) !== input.instrumentId) {
+    return null;
+  }
+  const signedQuantityAtomic = readTrimmedString(
+    input.value.signedQuantityAtomic,
+  );
+  const collateralAtomic = readTrimmedString(input.value.collateralAtomic);
+  if (
+    !signedQuantityAtomic ||
+    readAtomicBigInt(signedQuantityAtomic) === null ||
+    !collateralAtomic ||
+    readAtomicBigInt(collateralAtomic) === null
+  ) {
+    return null;
+  }
+  const averageEntryPriceRaw = Number(input.value.averageEntryPrice);
+  return {
+    signedQuantityAtomic,
+    collateralAtomic,
+    averageEntryPrice:
+      Number.isFinite(averageEntryPriceRaw) && averageEntryPriceRaw > 0
+        ? averageEntryPriceRaw
+        : null,
   };
 }
 
@@ -8313,13 +8350,19 @@ async function previewTerminalPerpOrder(input: {
     },
     executionAdapter: "drift",
   });
+  const currentPositionHint = parseTerminalPerpPositionHint({
+    value: input.payload.currentPosition,
+    instrumentId: parsed.instrumentId,
+  });
   const currentPosition =
+    currentPositionHint ??
     (
       await listTerminalPerpPositionsForActor({
         env: input.env,
         actorId: input.actorId,
       })
-    ).find((position) => position.instrumentId === parsed.instrumentId) ?? null;
+    ).find((position) => position.instrumentId === parsed.instrumentId) ??
+    null;
   const projected = applyPerpOrderToState({
     currentSignedQuantityAtomic:
       readAtomicBigInt(currentPosition?.signedQuantityAtomic) ?? 0n,

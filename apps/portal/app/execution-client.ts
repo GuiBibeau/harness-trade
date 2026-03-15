@@ -1770,6 +1770,13 @@ export function createExecutionClient(options: ExecutionClientOptions) {
       reduceOnly?: boolean;
       limitPriceAtomic?: string;
       triggerPriceAtomic?: string;
+      currentPosition?: Pick<
+        ExecutionPerpPosition,
+        | "instrumentId"
+        | "signedQuantityAtomic"
+        | "collateralAtomic"
+        | "averageEntryPrice"
+      > | null;
     },
     options?: RequestOptions,
   ): Promise<ExecutionPerpPreview> {

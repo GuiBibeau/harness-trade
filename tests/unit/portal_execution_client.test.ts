@@ -247,6 +247,21 @@ describe("portal execution client", () => {
           };
         }
         if (input.path === "/api/terminal/perp-preview") {
+          expect(JSON.parse(String(input.body ?? ""))).toEqual({
+            venueKey: "drift",
+            instrumentId: "SOL-PERP",
+            side: "long",
+            quantityAtomic: "2",
+            collateralAtomic: "100000000",
+            orderType: "limit",
+            limitPriceAtomic: "155000000",
+            currentPosition: {
+              instrumentId: "SOL-PERP",
+              signedQuantityAtomic: "1",
+              collateralAtomic: "50000000",
+              averageEntryPrice: 149.5,
+            },
+          });
           return {
             status: 200,
             payload: {
@@ -395,6 +410,12 @@ describe("portal execution client", () => {
       collateralAtomic: "100000000",
       orderType: "limit",
       limitPriceAtomic: "155000000",
+      currentPosition: {
+        instrumentId: "SOL-PERP",
+        signedQuantityAtomic: "1",
+        collateralAtomic: "50000000",
+        averageEntryPrice: 149.5,
+      },
     });
     expect(preview.projectedNotionalQuote).toBe(306.6);
     expect(preview.projectedRiskLevel).toBe("low");

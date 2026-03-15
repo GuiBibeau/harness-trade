@@ -135,6 +135,18 @@ export function PerpTicketModal({
     () => parseUiAmountToAtomic(triggerPriceUi, PRICE_DECIMALS),
     [triggerPriceUi],
   );
+  const currentPositionHint = useMemo(
+    () =>
+      currentPosition
+        ? {
+            instrumentId: currentPosition.instrumentId,
+            signedQuantityAtomic: currentPosition.signedQuantityAtomic,
+            collateralAtomic: currentPosition.collateralAtomic,
+            averageEntryPrice: currentPosition.averageEntryPrice,
+          }
+        : null,
+    [currentPosition],
+  );
 
   const refreshPreview = useCallback(async (): Promise<void> => {
     if (!intent || !quantityAtomic) {
@@ -179,6 +191,11 @@ export function PerpTicketModal({
         timeInForce,
         ...(limitPriceAtomic ? { limitPriceAtomic } : {}),
         ...(triggerPriceAtomic ? { triggerPriceAtomic } : {}),
+        ...(currentPositionHint
+          ? {
+              currentPosition: currentPositionHint,
+            }
+          : {}),
       });
       setPreview(nextPreview);
       setPreviewState("ready");
@@ -198,6 +215,7 @@ export function PerpTicketModal({
     quantityAtomic,
     timeInForce,
     triggerPriceAtomic,
+    currentPositionHint,
   ]);
 
   useEffect(() => {

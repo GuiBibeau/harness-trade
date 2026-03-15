@@ -300,4 +300,162 @@ describe("worker terminal perp routes", () => {
       sqlite.close();
     }
   });
+
+  test("perp preview uses the current position hint instead of requiring history scans", async () => {
+    const { env, sqlite } = createExecEnv();
+    try {
+      global.fetch = mock(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "https://drift.test/contracts") {
+          return new Response(
+            JSON.stringify({
+              contracts: [
+                {
+                  marketName: "SOL-PERP",
+                  marketIndex: 2,
+                  oracle: "oracle-sol",
+                  oracleSource: "pyth",
+                  status: "active",
+                  contractType: "perp",
+                  initialMarginRatio: 1000,
+                  maintenanceMarginRatio: 500,
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        if (url === "https://drift.test/fundingRates?marketName=SOL-PERP") {
+          return new Response(
+            JSON.stringify({
+              fundingRates: [
+                {
+                  marketName: "SOL-PERP",
+                  fundingRate: 0.00012,
+                  oraclePrice: 153.25,
+                  markPrice: 153.3,
+                  ts: "2026-03-14T18:00:00.000Z",
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        throw new Error(`unexpected-fetch:${url}`);
+      }) as typeof fetch;
+
+      const previewResponse = await worker.fetch(
+        new Request("http://localhost/api/terminal/perp-preview", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            venueKey: "drift",
+            instrumentId: "SOL-PERP",
+            instrumentLabel: "SOL-PERP",
+            side: "long",
+            quantityAtomic: "2",
+            collateralAtomic: "100000000",
+            currentPosition: {
+              instrumentId: "SOL-PERP",
+              signedQuantityAtomic: "5",
+              collateralAtomic: "200000000",
+              averageEntryPrice: 150,
+            },
+          }),
+        }),
+        env,
+        createExecutionContextStub(),
+      );
+      expect(previewResponse.status).toBe(200);
+      const previewBody = (await previewResponse.json()) as {
+        preview?: {
+          currentSignedQuantityAtomic?: string;
+          currentCollateralAtomic?: string;
+          projectedSignedQuantityAtomic?: string;
+          projectedCollateralAtomic?: string;
+        };
+      };
+      expect(previewBody.preview?.currentSignedQuantityAtomic).toBe("5");
+      expect(previewBody.preview?.currentCollateralAtomic).toBe("200000000");
+      expect(previewBody.preview?.projectedSignedQuantityAtomic).toBe("7");
+      expect(previewBody.preview?.projectedCollateralAtomic).toBe("300000000");
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  test("perp preview and submit reject non-positive quantities as validation errors", async () => {
+    const { env, sqlite } = createExecEnv();
+    try {
+      const driftFetch = mock(async () => {
+        throw new Error("drift-should-not-be-called");
+      });
+      global.fetch = driftFetch as typeof fetch;
+
+      const previewResponse = await worker.fetch(
+        new Request("http://localhost/api/terminal/perp-preview", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            venueKey: "drift",
+            instrumentId: "SOL-PERP",
+            instrumentLabel: "SOL-PERP",
+            side: "long",
+            quantityAtomic: "0",
+            collateralAtomic: "100000000",
+          }),
+        }),
+        env,
+        createExecutionContextStub(),
+      );
+      expect(previewResponse.status).toBe(400);
+      await expect(previewResponse.json()).resolves.toEqual({
+        ok: false,
+        error: "invalid-terminal-perp-order",
+      });
+
+      const submitResponse = await worker.fetch(
+        new Request("http://localhost/api/terminal/perp-orders", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer test",
+            "content-type": "application/json",
+            "idempotency-key": "perp-order-zero",
+          },
+          body: JSON.stringify({
+            venueKey: "drift",
+            instrumentId: "SOL-PERP",
+            instrumentLabel: "SOL-PERP",
+            side: "long",
+            quantityAtomic: "0",
+            collateralAtomic: "100000000",
+            source: "PERPS_PANEL",
+            reason: "Invalid zero-sized order",
+          }),
+        }),
+        env,
+        createExecutionContextStub(),
+      );
+      expect(submitResponse.status).toBe(400);
+      await expect(submitResponse.json()).resolves.toEqual({
+        ok: false,
+        error: "invalid-terminal-perp-order",
+      });
+      expect(driftFetch).not.toHaveBeenCalled();
+    } finally {
+      sqlite.close();
+    }
+  });
 });
