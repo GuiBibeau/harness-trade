@@ -44,7 +44,7 @@ import {
   readOpsControlSnapshot,
 } from "./ops_controls";
 import { evaluateOracleReferencePriceGuard } from "./oracle_reference";
-import { OrcaClient } from "./orca";
+import type { OrcaClient } from "./orca";
 import { enforcePolicy, normalizePolicy } from "./policy";
 import {
   createPrivySolanaWallet,
@@ -1800,7 +1800,9 @@ export async function runRuntimeResearchReadinessCanaryWorkflow(input: {
     context.venueKey === "raydium" ? new RaydiumClient() : undefined;
   const orca =
     context.venueKey === "orca"
-      ? new OrcaClient(String(input.env.RPC_ENDPOINT ?? "").trim())
+      ? new (await import("./orca")).OrcaClient(
+          String(input.env.RPC_ENDPOINT ?? "").trim(),
+        )
       : undefined;
 
   let quoteSummary: Awaited<ReturnType<typeof fetchCanaryQuote>>;
