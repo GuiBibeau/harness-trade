@@ -1,5 +1,8 @@
 import type { Address } from "@coral-xyz/anchor";
+import type { BankRaw, MarginfiGroupRaw } from "@mrgnlabs/marginfi-client-v2";
+import type { BankMetadataMap } from "@mrgnlabs/mrgn-common";
 import {
+  type AccountInfo,
   type AddressLookupTableAccount,
   Connection,
   Keypair,
@@ -65,9 +68,29 @@ export type FlashLiquidityLiveAccountState = {
   marginfiAccountAddress: string;
   activeBalanceCount: number;
   activeBankAddresses: string[];
+  activeBalances: Array<{
+    assetQuantityUi: string;
+    assetShares: string;
+    bankAddress: string;
+    liabilityQuantityUi: string;
+    liabilityShares: string;
+  }>;
 };
 
 let marginfiClientModulePromise: Promise<MarginfiClientModule> | null = null;
+
+const MARGINFI_BANK_MINT_OFFSET = 8;
+const MARGINFI_BANK_GROUP_OFFSET = MARGINFI_BANK_MINT_OFFSET + 32 + 1;
+
+const KNOWN_FLASH_BANK_METADATA_BY_MINT: Record<
+  string,
+  { tokenName: string; tokenSymbol: string }
+> = {
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: {
+    tokenName: "USD Coin",
+    tokenSymbol: "USDC",
+  },
+};
 
 function loadMarginfiClientModule(): Promise<MarginfiClientModule> {
   marginfiClientModulePromise ??= import("@mrgnlabs/marginfi-client-v2");
@@ -209,6 +232,7 @@ function readFlashMarginfiBorrowLeg(intent: NonSwapExecutionIntent): {
 async function buildMarginfiClient(input: {
   env: Pick<Env, "RPC_ENDPOINT">;
   walletPublicKey: PublicKey;
+  mint: string;
 }): Promise<{
   connection: Connection;
   client: MarginfiClient;
@@ -219,7 +243,34 @@ async function buildMarginfiClient(input: {
   const module = await loadMarginfiClientModule();
   const wallet = makeReadOnlyWallet(input.walletPublicKey);
   const config = module.getConfig("production");
-  const client = await module.MarginfiClient.fetch(config, wallet, connection);
+  const bankMint = new PublicKey(input.mint);
+  const bankAddresses = await findMarginfiBankAddressesByMint({
+    connection,
+    groupAddress: config.groupPk,
+    mint: bankMint,
+    programId: config.programId,
+  });
+  const client = await module.MarginfiClient.fetch(config, wallet, connection, {
+    bankMetadataMap: buildMinimalMarginfiBankMetadata({
+      bankAddresses,
+      mint: bankMint,
+    }),
+    fetchGroupDataOverride: (
+      program,
+      groupAddress,
+      _commitment,
+      preloaded,
+      bankMetadataMap,
+    ) =>
+      fetchMarginfiGroupDataWithoutBatch({
+        bankAddresses: preloaded,
+        bankMetadataMap,
+        groupAddress,
+        module,
+        program,
+      }),
+    preloadedBankAddresses: bankAddresses,
+  });
   return { connection, client, module };
 }
 
@@ -230,6 +281,240 @@ function selectReusableMarginfiAccount(
     accounts.find(
       (account) => !account.isDisabled && account.activeBalances.length < 1,
     ) ?? null
+  );
+}
+
+function buildMinimalMarginfiBankMetadata(input: {
+  bankAddresses: PublicKey[];
+  mint: PublicKey;
+}): BankMetadataMap {
+  const mint = input.mint.toBase58();
+  const knownMetadata = KNOWN_FLASH_BANK_METADATA_BY_MINT[mint];
+  return Object.fromEntries(
+    input.bankAddresses.map((bankAddress) => [
+      bankAddress.toBase58(),
+      {
+        tokenAddress: mint,
+        tokenName: knownMetadata?.tokenName ?? mint,
+        tokenSymbol: knownMetadata?.tokenSymbol ?? mint.slice(0, 6),
+      },
+    ]),
+  );
+}
+
+async function findMarginfiBankAddressesByMint(input: {
+  connection: Connection;
+  groupAddress: PublicKey;
+  mint: PublicKey;
+  programId: PublicKey;
+}): Promise<PublicKey[]> {
+  const accounts = await input.connection.getProgramAccounts(input.programId, {
+    commitment: "confirmed",
+    dataSlice: { offset: 0, length: 0 },
+    filters: [
+      {
+        memcmp: {
+          offset: MARGINFI_BANK_MINT_OFFSET,
+          bytes: input.mint.toBase58(),
+        },
+      },
+      {
+        memcmp: {
+          offset: MARGINFI_BANK_GROUP_OFFSET,
+          bytes: input.groupAddress.toBase58(),
+        },
+      },
+    ],
+  });
+  if (accounts.length < 1) {
+    throw new Error(
+      `flash-liquidity-live-bank-lookup-failed:${input.mint.toBase58()}:${accounts.length}`,
+    );
+  }
+  return accounts.map((account) => account.pubkey);
+}
+
+async function readAccountInfosWithoutBatch(
+  connection: Connection,
+  publicKeys: PublicKey[],
+): Promise<AccountInfo<Buffer>[]> {
+  const accountInfos = await Promise.all(
+    publicKeys.map((publicKey) =>
+      connection.getAccountInfo(publicKey, "confirmed"),
+    ),
+  );
+  if (accountInfos.some((accountInfo) => accountInfo === null)) {
+    throw new Error("flash-liquidity-live-account-info-missing");
+  }
+  return accountInfos as AccountInfo<Buffer>[];
+}
+
+async function fetchMarginfiGroupDataWithoutBatch(input: {
+  bankAddresses?: PublicKey[];
+  bankMetadataMap?: BankMetadataMap;
+  groupAddress: PublicKey;
+  module: MarginfiClientModule;
+  program: {
+    account: {
+      bank: {
+        fetchMultiple(addresses: PublicKey[]): Promise<Array<BankRaw | null>>;
+      };
+      marginfiGroup: {
+        fetch(address: PublicKey): Promise<MarginfiGroupRaw>;
+      };
+    };
+    provider: {
+      connection: Connection;
+    };
+  };
+}): Promise<{
+  marginfiGroup: unknown;
+  banks: Map<string, Bank>;
+  priceInfos: Map<string, unknown>;
+  tokenDatas: Map<
+    string,
+    {
+      mint: PublicKey;
+      tokenProgram: PublicKey;
+      feeBps: number;
+      emissionTokenProgram: PublicKey | null;
+    }
+  >;
+  feedIdMap: Map<never, never>;
+}> {
+  const bankAddresses = Array.isArray(input.bankAddresses)
+    ? input.bankAddresses
+    : [];
+  if (bankAddresses.length < 1) {
+    throw new Error("flash-liquidity-live-preloaded-bank-required");
+  }
+  const fetchedBankAccounts =
+    await input.program.account.bank.fetchMultiple(bankAddresses);
+  const bankDatasKeyed = bankAddresses.flatMap((address, index) => {
+    const data = fetchedBankAccounts[index];
+    return data === null ? [] : [{ address, data }];
+  });
+  const mintKeys = bankDatasKeyed.map((bank) => bank.data.mint);
+  const emissionMintKeys = bankDatasKeyed
+    .map((bank) => bank.data.emissionsMint)
+    .filter((mint) => !mint.equals(PublicKey.default));
+  const oracleKeys = bankDatasKeyed.map(
+    (bank) =>
+      input.module.findOracleKey(
+        input.module.BankConfig.fromAccountParsed(bank.data.config),
+      ).oracleKey,
+  );
+  const [marginfiGroupRaw, accountInfos] = await Promise.all([
+    input.program.account.marginfiGroup.fetch(input.groupAddress),
+    readAccountInfosWithoutBatch(input.program.provider.connection, [
+      ...oracleKeys,
+      ...mintKeys,
+      ...emissionMintKeys,
+    ]),
+  ]);
+  const oracleAis = accountInfos.splice(0, oracleKeys.length);
+  const mintAis = accountInfos.splice(0, mintKeys.length);
+  const emissionMintAis = accountInfos.splice(0);
+  const banks = new Map(
+    bankDatasKeyed.map(({ address, data }) => {
+      const bankMetadata = input.bankMetadataMap?.[address.toBase58()];
+      const bank = input.module.Bank.fromAccountParsed(
+        address,
+        data,
+        undefined,
+        bankMetadata,
+      );
+      return [address.toBase58(), bank];
+    }),
+  );
+  const tokenDatas = new Map(
+    bankDatasKeyed.map(({ address: bankAddress, data: bankData }, index) => {
+      const mintAddress = mintKeys[index];
+      const mintDataRaw = mintAis[index];
+      if (!mintDataRaw) {
+        throw new Error(
+          `flash-liquidity-live-mint-account-missing:${bankAddress.toBase58()}`,
+        );
+      }
+      let emissionTokenProgram: PublicKey | null = null;
+      if (!bankData.emissionsMint.equals(PublicKey.default)) {
+        const emissionMintIndex = emissionMintKeys.findIndex((mint) =>
+          mint.equals(bankData.emissionsMint),
+        );
+        emissionTokenProgram =
+          emissionMintIndex >= 0
+            ? emissionMintAis[emissionMintIndex].owner
+            : null;
+      }
+      return [
+        bankAddress.toBase58(),
+        {
+          mint: mintAddress,
+          tokenProgram: mintDataRaw.owner,
+          feeBps: 0,
+          emissionTokenProgram,
+        },
+      ];
+    }),
+  );
+  const priceInfos = new Map(
+    bankDatasKeyed.map(({ address: bankAddress, data: bankData }, index) => {
+      const priceDataRaw = oracleAis[index];
+      if (!priceDataRaw) {
+        throw new Error(
+          `flash-liquidity-live-oracle-account-missing:${bankAddress.toBase58()}`,
+        );
+      }
+      const parsedBankConfig = input.module.BankConfig.fromAccountParsed(
+        bankData.config,
+      );
+      const oracleSetup = input.module.parseOracleSetup(
+        bankData.config.oracleSetup,
+      );
+      const fixedPrice = parsedBankConfig.fixedPrice;
+      return [
+        bankAddress.toBase58(),
+        input.module.parsePriceInfo(oracleSetup, priceDataRaw.data, fixedPrice),
+      ];
+    }),
+  );
+  return {
+    marginfiGroup: input.module.MarginfiGroup.fromAccountParsed(
+      input.groupAddress,
+      marginfiGroupRaw,
+    ),
+    banks,
+    priceInfos,
+    tokenDatas,
+    feedIdMap: new Map(),
+  };
+}
+
+async function listMarginfiAccountsForAuthority(input: {
+  authority: PublicKey;
+  client: MarginfiClient;
+  module: MarginfiClientModule;
+}): Promise<MarginfiAccountWrapper[]> {
+  const accounts = await input.client.program.account.marginfiAccount.all([
+    {
+      memcmp: {
+        bytes: input.client.groupAddress.toBase58(),
+        offset: 8,
+      },
+    },
+    {
+      memcmp: {
+        bytes: input.authority.toBase58(),
+        offset: 8 + 32,
+      },
+    },
+  ]);
+  return accounts.map((account) =>
+    input.module.MarginfiAccountWrapper.fromAccountParsed(
+      account.publicKey,
+      input.client,
+      account.account,
+    ),
   );
 }
 
@@ -251,8 +536,9 @@ export async function resolveFlashLiquidityLiveAccount(input: {
 }): Promise<FlashLiquidityLiveAccountResolution> {
   const walletPublicKey = new PublicKey(input.walletPublicKey);
   const borrowLeg = readFlashMarginfiBorrowLeg(input.intent);
-  const { client, connection } = await buildMarginfiClient({
+  const { client, connection, module } = await buildMarginfiClient({
     env: input.env,
+    mint: borrowLeg.mint,
     walletPublicKey,
   });
   const bank = await resolveMarginfiBank({
@@ -263,8 +549,11 @@ export async function resolveFlashLiquidityLiveAccount(input: {
     borrowLeg.amountAtomic,
     bank.mintDecimals,
   );
-  const accounts =
-    await client.getMarginfiAccountsForAuthority(walletPublicKey);
+  const accounts = await listMarginfiAccountsForAuthority({
+    authority: walletPublicKey,
+    client,
+    module,
+  });
   const reusableAccount = selectReusableMarginfiAccount(accounts);
   if (reusableAccount) {
     return {
@@ -317,6 +606,7 @@ export async function buildFlashLiquidityLiveTransactionPlan(input: {
   const borrowLeg = readFlashMarginfiBorrowLeg(input.intent);
   const { client, connection, module } = await buildMarginfiClient({
     env: input.env,
+    mint: borrowLeg.mint,
     walletPublicKey,
   });
   const bank = await resolveMarginfiBank({
@@ -378,12 +668,14 @@ export async function buildFlashLiquidityLiveTransactionPlan(input: {
 
 export async function readFlashLiquidityLiveAccountState(input: {
   env: Pick<Env, "RPC_ENDPOINT">;
+  bankMint: string;
   walletPublicKey: string;
   marginfiAccountAddress: string;
 }): Promise<FlashLiquidityLiveAccountState> {
   const walletPublicKey = new PublicKey(input.walletPublicKey);
   const { client, module } = await buildMarginfiClient({
     env: input.env,
+    mint: input.bankMint,
     walletPublicKey,
   });
   const marginfiAccount = await module.MarginfiAccountWrapper.fetch(
@@ -397,5 +689,22 @@ export async function readFlashLiquidityLiveAccountState(input: {
     activeBankAddresses: marginfiAccount.activeBalances.map((balance) =>
       balance.bankPk.toBase58(),
     ),
+    activeBalances: marginfiAccount.activeBalances.map((balance) => {
+      const bank = client.getBankByPk(balance.bankPk);
+      const quantities = bank
+        ? balance.computeQuantityUi(bank)
+        : { assets: null, liabilities: null };
+      return {
+        bankAddress: balance.bankPk.toBase58(),
+        assetShares: balance.assetShares.toFixed(),
+        liabilityShares: balance.liabilityShares.toFixed(),
+        assetQuantityUi:
+          quantities.assets === null ? "unknown" : quantities.assets.toFixed(),
+        liabilityQuantityUi:
+          quantities.liabilities === null
+            ? "unknown"
+            : quantities.liabilities.toFixed(),
+      };
+    }),
   };
 }

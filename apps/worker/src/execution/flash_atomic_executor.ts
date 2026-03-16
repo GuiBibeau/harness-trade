@@ -475,6 +475,7 @@ export async function executeFlashAtomicIntent(
 
   const accountState = await readLiveAccountState({
     env: input.env,
+    bankMint: livePlan.bankMint,
     walletPublicKey: input.intent.wallet,
     marginfiAccountAddress,
   });

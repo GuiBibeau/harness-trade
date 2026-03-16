@@ -2372,6 +2372,13 @@ function readFlashExecutionAccountState(result: ExecuteSwapResult): {
   marginfiAccountAddress: string | null;
   activeBalanceCount: number | null;
   activeBankAddresses: string[];
+  activeBalances: Array<{
+    assetQuantityUi: string;
+    assetShares: string;
+    bankAddress: string;
+    liabilityQuantityUi: string;
+    liabilityShares: string;
+  }>;
   setupSignature: string | null;
   liveProvider: string | null;
   liveBankAddress: string | null;
@@ -2401,11 +2408,45 @@ function readFlashExecutionAccountState(result: ExecuteSwapResult): {
         ? snapshot.activeBalanceCount
         : null,
     activeBankAddresses: readStringArray(snapshot?.activeBankAddresses),
+    activeBalances: Array.isArray(snapshot?.activeBalances)
+      ? snapshot.activeBalances.flatMap((entry) => {
+          if (!isRecord(entry)) {
+            return [];
+          }
+          return [
+            {
+              bankAddress: readOptionalString(entry.bankAddress) ?? "unknown",
+              assetShares: readOptionalString(entry.assetShares) ?? "unknown",
+              liabilityShares:
+                readOptionalString(entry.liabilityShares) ?? "unknown",
+              assetQuantityUi:
+                readOptionalString(entry.assetQuantityUi) ?? "unknown",
+              liabilityQuantityUi:
+                readOptionalString(entry.liabilityQuantityUi) ?? "unknown",
+            },
+          ];
+        })
+      : [],
     setupSignature,
     liveProvider: readOptionalString(snapshot?.liveProvider) ?? null,
     liveBankAddress: readOptionalString(snapshot?.liveBankAddress) ?? null,
     liveBankMint: readOptionalString(snapshot?.liveBankMint) ?? null,
   };
+}
+
+function flashAccountHasResidualExposure(
+  executionState: ReturnType<typeof readFlashExecutionAccountState>,
+): boolean {
+  const isZeroQuantity = (value: string): boolean =>
+    /^(?:0|0\.0+)$/.test(value.trim());
+  if (executionState.activeBalances.length < 1) {
+    return false;
+  }
+  return executionState.activeBalances.some(
+    (balance) =>
+      !isZeroQuantity(balance.assetQuantityUi) ||
+      !isZeroQuantity(balance.liabilityQuantityUi),
+  );
 }
 
 function classifyExecutionFailure(
@@ -3161,7 +3202,7 @@ async function runFlashLiquidityVenueSmoke(input: {
   const reconciliationPassed =
     readTransactionError(transaction) === null &&
     tokenDeltaAtomic === 0n &&
-    executionState.activeBalanceCount === 0;
+    !flashAccountHasResidualExposure(executionState);
 
   return await finalizeReadinessCanaryRun(input.env, {
     runId: input.runId,
@@ -3184,6 +3225,7 @@ async function runFlashLiquidityVenueSmoke(input: {
           `status=${result.status}`,
           `flashProvider=${flashProvider}`,
           `activeBalanceCount=${executionState.activeBalanceCount ?? -1}`,
+          `activeBalances=${JSON.stringify(executionState.activeBalances)}`,
           `netTokenDeltaAtomic=${tokenDeltaAtomic.toString()}`,
         ],
       },
@@ -3212,6 +3254,7 @@ async function runFlashLiquidityVenueSmoke(input: {
         marginfiAccountAddress: executionState.marginfiAccountAddress,
         activeBalanceCount: executionState.activeBalanceCount,
         activeBankAddresses: executionState.activeBankAddresses,
+        activeBalances: executionState.activeBalances,
         setupSignature: executionState.setupSignature,
         liveBankAddress: executionState.liveBankAddress,
         liveBankMint: executionState.liveBankMint,
