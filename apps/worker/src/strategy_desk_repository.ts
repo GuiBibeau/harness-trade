@@ -21,6 +21,9 @@ function stringOrNull(value: unknown): string | null {
 }
 
 function parseJsonValue(value: unknown): unknown {
+  if (Array.isArray(value) || isRecord(value)) {
+    return value;
+  }
   if (typeof value !== "string" || !value.trim()) return undefined;
   try {
     return JSON.parse(value) as unknown;
