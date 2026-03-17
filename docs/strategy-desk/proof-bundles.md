@@ -52,7 +52,6 @@ Set:
 ```bash
 export DESK_BASE_URL="${DESK_BASE_URL:-http://127.0.0.1:8888}"
 export ADMIN_TOKEN="${ADMIN_TOKEN:?set ADMIN_TOKEN first}"
-export HANDOFF_ID="${HANDOFF_ID:-desk_handoff_sol_composite_live_1}"
 ```
 
 ### 1. Scenario manifest
@@ -111,6 +110,9 @@ curl -fsS \
   -H "content-type: application/json" \
   --data @docs/strategy-desk/request-templates/desk-sol-composite/handoff.prepare.request.json \
   | tee .tmp/strategy-desk-proof/desk_sol_composite_1/05-handoff/01-prepare.json
+
+export HANDOFF_ID="${HANDOFF_ID:-$(jq -r '.handoff.handoffId' .tmp/strategy-desk-proof/desk_sol_composite_1/05-handoff/01-prepare.json)}"
+test -n "${HANDOFF_ID}" && test "${HANDOFF_ID}" != "null"
 ```
 
 Approve and apply:
