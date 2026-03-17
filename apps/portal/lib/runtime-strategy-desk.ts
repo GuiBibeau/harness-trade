@@ -182,13 +182,16 @@ export function safeParseRuntimeStrategyDeskScenarioManifest(
     return fail("strategy-desk-scenario-invalid");
   }
 
-  const legs = Array.isArray(value.legs)
-    ? value.legs.flatMap((entry) => {
-        const parsed = safeParseScenarioLeg(entry);
-        return parsed.success ? [parsed.data] : [];
-      })
-    : [];
-  if (legs.length === 0) return fail("strategy-desk-scenario-legs-invalid");
+  if (!Array.isArray(value.legs) || value.legs.length === 0) {
+    return fail("strategy-desk-scenario-legs-invalid");
+  }
+  const parsedLegs = value.legs.map((entry) => safeParseScenarioLeg(entry));
+  if (parsedLegs.some((parsed) => !parsed.success)) {
+    return fail("strategy-desk-scenario-legs-invalid");
+  }
+  const legs = parsedLegs.map(
+    (parsed) => (parsed as ParseSuccess<RuntimeStrategyDeskScenarioLeg>).data,
+  );
 
   return {
     success: true,

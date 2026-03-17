@@ -128,7 +128,7 @@ function collectReproducibilityRefs(
   return [...refs];
 }
 
-function buildRunComparison(
+export function buildRunComparison(
   runs: RuntimeStrategyDeskScenarioRun[],
   reports: RuntimeStrategyDeskScenarioReport[],
 ) {
@@ -142,6 +142,9 @@ function buildRunComparison(
       : {};
     const studyMatrix = isRecord(report?.studyMatrix) ? report.studyMatrix : {};
     const scorecard = isRecord(report?.scorecard) ? report.scorecard : {};
+    const scorecardAggregate = isRecord(scorecard.aggregate)
+      ? scorecard.aggregate
+      : {};
     return {
       scenarioRunId: run.scenarioRunId,
       runKind: run.runKind,
@@ -149,7 +152,9 @@ function buildRunComparison(
       reportStatus: report?.status ?? null,
       generatedAt: report?.generatedAt ?? run.updatedAt,
       netPnlUsd:
-        readString(portfolio.netPnlUsd) ?? readString(scorecard.netPnlUsd),
+        readString(portfolio.netPnlUsd) ??
+        readString(scorecardAggregate.netPnlUsd) ??
+        readString(scorecard.netPnlUsd),
       maxDrawdownBps: readString(portfolio.maxDrawdownBps),
       selectedVariantId: readString(studyMatrix.selectedVariantId),
     };
