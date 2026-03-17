@@ -246,6 +246,46 @@ describe("worker execution router", () => {
     expect(result.executionMeta?.route).toBe("flash_liquidity");
   });
 
+  test("allows flash-liquidity live venue smoke only through the bounded readiness bypass", async () => {
+    const { env, sqlite } = await createLiveRouterEnv();
+    try {
+      const result = await executeIntentViaRouter({
+        env,
+        venueKey: "flash_liquidity",
+        runtimeMode: "live",
+        experimentalLiveModeBypass: "venue_tx_smoke",
+        requireVenueRouting: true,
+        subjectControlBypassReason: "strategy_lab_readiness_canary",
+        execution: { adapter: "flash_liquidity" },
+        policy: normalizePolicy({ dryRun: true }),
+        rpc: {} as never,
+        jupiter: {} as never,
+        intent: {
+          family: "flash_atomic",
+          wallet: "11111111111111111111111111111111",
+          venueKey: "flash_liquidity",
+          marketType: "spot",
+          instrumentId: "USDC/USDC",
+          referenceId: "flash-smoke",
+          settlementMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          borrowLegs: [
+            {
+              provider: "marginfi",
+              mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+              amountAtomic: "1000000",
+            },
+          ],
+        },
+        log: () => {},
+      });
+
+      expect(result.status).toBe("dry_run");
+      expect(result.executionMeta?.route).toBe("flash_liquidity");
+    } finally {
+      sqlite.close();
+    }
+  });
+
   test("custom execution adapters can be registered for new intent families", async () => {
     registerExecutionAdapter(
       "phoenix_orderbook",
@@ -474,6 +514,121 @@ describe("worker execution router", () => {
     expect(result.executionMeta?.route).toBe("openbook_v2");
   });
 
+  test("fails closed when OpenBook clob orders are requested in live mode", async () => {
+    await expect(
+      executeIntentViaRouter({
+        env: {} as never,
+        venueKey: "openbook",
+        runtimeMode: "live",
+        requireVenueRouting: true,
+        execution: { adapter: "openbook_v2" },
+        policy: normalizePolicy({ dryRun: true }),
+        rpc: {} as never,
+        jupiter: {} as never,
+        intent: {
+          family: "clob_order",
+          wallet: "11111111111111111111111111111111",
+          venueKey: "openbook",
+          marketType: "spot",
+          instrumentId: "SOL/USDC",
+          side: "buy",
+          quantityAtomic: "1000000000",
+        },
+        log: () => {},
+      }),
+    ).rejects.toThrow(/runtime-venue-mode-not-supported:openbook:live/);
+  });
+
+  test("allows OpenBook live venue smoke only through the bounded readiness bypass", async () => {
+    const { env, sqlite } = await createLiveRouterEnv();
+    try {
+      const result = await executeIntentViaRouter({
+        env: {
+          ...env,
+          RPC_ENDPOINT: "https://rpc.test",
+        } as never,
+        venueKey: "openbook",
+        runtimeMode: "live",
+        experimentalLiveModeBypass: "venue_tx_smoke",
+        requireVenueRouting: true,
+        subjectControlBypassReason: "strategy_lab_readiness_canary",
+        execution: { adapter: "openbook_v2" },
+        policy: normalizePolicy({ dryRun: true }),
+        rpc: {} as never,
+        jupiter: {} as never,
+        openbook: {
+          buildPlaceOrderPlan: async () => ({
+            ...{
+              unsignedTransactionBase64: "unsigned",
+              lastValidBlockHeight: 42,
+            },
+            market: {
+              instrumentId: "SOL/USDC",
+              marketAddress: "market-1",
+              baseMint: "mint-base",
+              quoteMint: "mint-quote",
+              baseDecimals: 9,
+              quoteDecimals: 6,
+              bestBidPriceUi: 149.5,
+              bestAskPriceUi: 150,
+              bestBidSizeUi: 2,
+              bestAskSizeUi: 3,
+              spreadBps: 33,
+              tickSizeUi: "0.01",
+              minOrderSizeUi: "0.001",
+              openOrdersAdminRequired: false,
+              consumeEventsAdminRequired: false,
+              closeMarketAdminRequired: false,
+            },
+            prerequisites: {
+              openOrdersIndexer: "indexer-1",
+              openOrdersAccount: "oo-1",
+              userBaseAccount: "base-ata",
+              userQuoteAccount: "quote-ata",
+              userFundingAccount: "quote-ata",
+              createdOpenOrdersIndexer: true,
+              createdOpenOrdersAccount: true,
+            },
+            request: {
+              side: "buy",
+              quantityAtomic: "1000000000",
+              quantityBaseUi: 1,
+              orderType: "limit",
+              timeInForce: "ioc",
+              postOnly: false,
+              limitPriceAtomic: "151000000",
+              limitPriceUi: 151,
+              clientOrderId: "42",
+              estimatedQuoteUi: 151,
+              estimatedQuoteAtomic: "151000000",
+            },
+            quotePreview: {
+              inputMint: "mint-quote",
+              outputMint: "mint-base",
+              inAmount: "151000000",
+              outAmount: "1000000000",
+            },
+          }),
+        } as never,
+        intent: {
+          family: "clob_order",
+          wallet: "11111111111111111111111111111111",
+          venueKey: "openbook",
+          marketType: "spot",
+          instrumentId: "SOL/USDC",
+          side: "buy",
+          quantityAtomic: "1000000000",
+        },
+        log: () => {},
+      });
+
+      expect(result.status).toBe("dry_run");
+      expect(result.executionMeta?.route).toBe("openbook_v2");
+    } finally {
+      sqlite.close();
+    }
+  });
+
   test("routes Drift perp intents through the Drift executor in paper mode", async () => {
     const result = await executeIntentViaRouter({
       env: {} as never,
@@ -544,6 +699,134 @@ describe("worker execution router", () => {
     expect(result.status).toBe("simulated");
     expect(result.executionMeta?.route).toBe("drift");
     expect(result.executionMeta?.lifecycle?.positionState).toBe("opening");
+  });
+
+  test("fails closed when Drift perp orders are requested in live mode", async () => {
+    await expect(
+      executeIntentViaRouter({
+        env: {} as never,
+        venueKey: "drift",
+        runtimeMode: "live",
+        requireVenueRouting: true,
+        execution: { adapter: "drift" },
+        policy: normalizePolicy({ dryRun: true }),
+        rpc: {} as never,
+        jupiter: {} as never,
+        drift: {
+          swiftConfigured: () => false,
+          describePerpIntent: async () => ({
+            instrument: {
+              marketName: "SOL-PERP",
+              marketIndex: 2,
+              oracle: "oracle-sol",
+              oracleSource: "pyth",
+              status: "active",
+              contractType: "perp",
+              initialMarginRatio: 1000,
+              maintenanceMarginRatio: 500,
+            },
+            funding: null,
+            side: "long",
+            direction: "long",
+            reduceOnly: false,
+            orderType: "market",
+            timeInForce: "ioc",
+            quantityAtomic: "1000000",
+            collateralAtomic: "250000",
+            limitPriceAtomic: null,
+            triggerPriceAtomic: null,
+            swiftSupported: false,
+          }),
+          buildSyntheticQuote: () => ({
+            inputMint: "SOL-PERP",
+            outputMint: "SOL-PERP",
+            inAmount: "250000",
+            outAmount: "1000000",
+            priceImpactPct: 0,
+            routePlan: [{ poolId: "SOL-PERP", swapInfo: { label: "Drift" } }],
+          }),
+        } as never,
+        intent: {
+          family: "perp_order",
+          wallet: "11111111111111111111111111111111",
+          venueKey: "drift",
+          marketType: "perp",
+          instrumentId: "SOL-PERP",
+          side: "long",
+          quantityAtomic: "1000000",
+          collateralAtomic: "250000",
+        },
+        log: () => {},
+      }),
+    ).rejects.toThrow(/runtime-venue-mode-not-supported:drift:live/);
+  });
+
+  test("allows Drift live venue smoke only through the bounded readiness bypass", async () => {
+    const { env, sqlite } = await createLiveRouterEnv();
+    try {
+      const result = await executeIntentViaRouter({
+        env,
+        venueKey: "drift",
+        runtimeMode: "live",
+        experimentalLiveModeBypass: "venue_tx_smoke",
+        requireVenueRouting: true,
+        subjectControlBypassReason: "strategy_lab_readiness_canary",
+        execution: { adapter: "drift" },
+        policy: normalizePolicy({ dryRun: true }),
+        rpc: {} as never,
+        jupiter: {} as never,
+        drift: {
+          swiftConfigured: () => false,
+          describePerpIntent: async () => ({
+            instrument: {
+              marketName: "SOL-PERP",
+              marketIndex: 2,
+              oracle: "oracle-sol",
+              oracleSource: "pyth",
+              status: "active",
+              contractType: "perp",
+              initialMarginRatio: 1000,
+              maintenanceMarginRatio: 500,
+            },
+            funding: null,
+            side: "long",
+            direction: "long",
+            reduceOnly: false,
+            orderType: "market",
+            timeInForce: "ioc",
+            quantityAtomic: "1000000",
+            collateralAtomic: "250000",
+            limitPriceAtomic: null,
+            triggerPriceAtomic: null,
+            swiftSupported: false,
+          }),
+          buildSyntheticQuote: () => ({
+            inputMint: "SOL-PERP",
+            outputMint: "SOL-PERP",
+            inAmount: "250000",
+            outAmount: "1000000",
+            priceImpactPct: 0,
+            routePlan: [{ poolId: "SOL-PERP", swapInfo: { label: "Drift" } }],
+          }),
+        } as never,
+        intent: {
+          family: "perp_order",
+          wallet: "11111111111111111111111111111111",
+          venueKey: "drift",
+          marketType: "perp",
+          instrumentId: "SOL-PERP",
+          side: "long",
+          quantityAtomic: "1000000",
+          collateralAtomic: "250000",
+        },
+        log: () => {},
+      });
+
+      expect(result.status).toBe("dry_run");
+      expect(result.executionMeta?.route).toBe("drift");
+    } finally {
+      sqlite.close();
+    }
   });
 
   test("routes Mango spot margin orders through the Mango executor in paper mode", async () => {
@@ -737,6 +1020,47 @@ describe("worker execution router", () => {
     ).rejects.toThrow(/runtime-venue-mode-not-supported:raydium:live/);
   });
 
+  test("allows Raydium live venue smoke only through the bounded readiness bypass", async () => {
+    const { env, sqlite } = await createLiveRouterEnv();
+    try {
+      const result = await executeSwapViaRouter({
+        env,
+        venueKey: "raydium",
+        runtimeMode: "live",
+        experimentalLiveModeBypass: "venue_tx_smoke",
+        requireVenueRouting: true,
+        subjectControlBypassReason: "strategy_lab_readiness_canary",
+        execution: { adapter: "raydium" },
+        policy: normalizePolicy({ dryRun: true }),
+        rpc: {} as never,
+        jupiter: {} as never,
+        quoteResponse: {
+          inputMint: "A",
+          outputMint: "B",
+          inAmount: "1",
+          outAmount: "2",
+          raydiumQuoteEnvelope: {
+            id: "quote-1",
+            success: true,
+            data: {
+              inputMint: "A",
+              outputMint: "B",
+              inputAmount: "1",
+              outputAmount: "2",
+            },
+          },
+        },
+        userPublicKey: "11111111111111111111111111111111",
+        log: () => {},
+      });
+
+      expect(result.status).toBe("dry_run");
+      expect(result.executionMeta?.route).toBe("raydium");
+    } finally {
+      sqlite.close();
+    }
+  });
+
   test("fails closed when Orca spot swaps are requested in live mode", async () => {
     await expect(
       executeSwapViaRouter({
@@ -761,6 +1085,40 @@ describe("worker execution router", () => {
         log: () => {},
       }),
     ).rejects.toThrow(/runtime-venue-mode-not-supported:orca:live/);
+  });
+
+  test("allows Orca live venue smoke only through the bounded readiness bypass", async () => {
+    const { env, sqlite } = await createLiveRouterEnv();
+    try {
+      const result = await executeSwapViaRouter({
+        env,
+        venueKey: "orca",
+        runtimeMode: "live",
+        experimentalLiveModeBypass: "venue_tx_smoke",
+        requireVenueRouting: true,
+        subjectControlBypassReason: "strategy_lab_readiness_canary",
+        execution: { adapter: "orca" },
+        policy: normalizePolicy({ dryRun: true }),
+        rpc: {} as never,
+        jupiter: {} as never,
+        quoteResponse: {
+          inputMint: "A",
+          outputMint: "B",
+          inAmount: "1",
+          outAmount: "2",
+          orcaPoolSnapshot: {
+            address: "orca-pool-1",
+          },
+        },
+        userPublicKey: "11111111111111111111111111111111",
+        log: () => {},
+      });
+
+      expect(result.status).toBe("dry_run");
+      expect(result.executionMeta?.route).toBe("orca");
+    } finally {
+      sqlite.close();
+    }
   });
 
   test("fails closed when adapter is not allowlisted for the runtime venue", async () => {

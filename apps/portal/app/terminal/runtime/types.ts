@@ -3,6 +3,9 @@ import type {
   RuntimeLedgerSnapshot,
   RuntimeRunRecord,
 } from "../../../lib/runtime-contracts";
+import type { RuntimeOperatorProgramMatrixEntry } from "./program-matrix";
+
+export type { RuntimeOperatorProgramMatrixEntry } from "./program-matrix";
 
 export type RuntimeControlAction = "pause" | "resume" | "kill";
 export type RuntimeSubjectKind = "venue" | "asset";
@@ -25,6 +28,27 @@ export type RuntimeOperatorReadinessCanaryInput = {
   targetNotionalUsd?: string;
 };
 
+export type RuntimeOperatorVenueTxSmokeInput = {
+  subjectKind: "venue";
+  subjectKey: string;
+  venueKey?: string;
+  assetKey?: string;
+  pairSymbol?: string;
+  adapterKey?: string;
+  targetNotionalUsd?: string;
+  smokeIntentFamily?:
+    | "spot_swap"
+    | "conditional_spot_order"
+    | "clob_order"
+    | "prediction_order"
+    | "flash_atomic";
+  smokeOrderSide?: "buy" | "sell";
+  tightenOnFailure?: boolean;
+  failureControlMode?: "disable_live" | "engage_kill_switch";
+  killDrillNotes?: string[];
+  metadata?: Record<string, unknown>;
+};
+
 export type RuntimeOperatorControls = {
   enabled: boolean;
   disabledReason: string | null;
@@ -37,6 +61,7 @@ export type RuntimeOperatorSnapshot = {
   source: string;
   integration: Record<string, unknown>;
   health: Record<string, unknown> | null;
+  routes: Record<string, unknown> | null;
   deployments: RuntimeDeploymentRecord[];
   controls: RuntimeOperatorControls;
   canary: Record<string, unknown> | null;
@@ -96,6 +121,10 @@ export type RuntimeOperatorDetail = {
 export type RuntimeOperatorApiPayload = {
   ok: boolean;
   runtime: RuntimeOperatorSnapshot;
+  program: {
+    matrix: RuntimeOperatorProgramMatrixEntry[];
+    nextIssueOrder: number[];
+  };
   selectedDeploymentId: string | null;
   detail: RuntimeOperatorDetail | null;
   detailError: string | null;

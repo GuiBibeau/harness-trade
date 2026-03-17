@@ -2,13 +2,24 @@
 
 import Link from "next/link";
 import { BTN_PRIMARY, BTN_SECONDARY, formatTick } from "../../lib";
+import {
+  getTerminalIntentFamilyLabel,
+  getTerminalVenueDefinition,
+  getTerminalVenueExecutionReadinessLabel,
+  isTerminalVenueEnabled,
+  resolveTerminalVenueRolloutPolicy,
+  TERMINAL_INTENT_FAMILIES,
+  TERMINAL_VENUE_KEYS,
+} from "../terminal-venues";
 import type {
   RuntimeControlAction,
   RuntimeOperatorApiPayload,
   RuntimeOperatorDetail,
+  RuntimeOperatorProgramMatrixEntry,
   RuntimeOperatorReadinessCanaryInput,
   RuntimeOperatorSnapshot,
   RuntimeOperatorSubjectControlInput,
+  RuntimeOperatorVenueTxSmokeInput,
 } from "./types";
 
 type RuntimeOperatorViewProps = {
@@ -22,6 +33,7 @@ type RuntimeOperatorViewProps = {
   onControl?: (action: RuntimeControlAction) => void;
   onSubjectControl?: (input: RuntimeOperatorSubjectControlInput) => void;
   onReadinessCanary?: (input: RuntimeOperatorReadinessCanaryInput) => void;
+  onVenueTxSmoke?: (input: RuntimeOperatorVenueTxSmokeInput) => void;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -96,6 +108,12 @@ function buildReadinessCanaryActionKey(
   return `readiness-canary:${input.subjectKind}:${input.subjectKey}`;
 }
 
+function buildVenueTxSmokeActionKey(
+  input: RuntimeOperatorVenueTxSmokeInput,
+): string {
+  return `venue-tx-smoke:${input.subjectKey}:${input.smokeIntentFamily ?? "spot_swap"}`;
+}
+
 function renderBadge(status: string, label?: string) {
   return (
     <span
@@ -105,6 +123,108 @@ function renderBadge(status: string, label?: string) {
     >
       {(label ?? status).replaceAll("_", " ")}
     </span>
+  );
+}
+
+function renderProgramMatrix(
+  matrix: RuntimeOperatorProgramMatrixEntry[],
+  nextIssueOrder: number[],
+) {
+  if (matrix.length === 0) {
+    return (
+      <div className="rounded border border-dashed border-border p-4 text-sm text-muted">
+        Venue program matrix is not available yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="runtime-operator-program-matrix">
+      <div className="rounded border border-border bg-paper/70 p-4">
+        <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+          Next issue order
+        </p>
+        <p className="mt-2 text-sm text-muted">
+          {nextIssueOrder.length > 0
+            ? nextIssueOrder
+                .map((issueNumber) => `#${issueNumber}`)
+                .join(" -> ")
+            : "No queued follow-up issues."}
+        </p>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {matrix.map((entry) => (
+          <article
+            key={entry.subjectKey}
+            className="rounded border border-border bg-surface/80 p-4"
+            data-testid={`runtime-program-${entry.subjectKey}`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+                  {entry.programFamily} venue
+                </p>
+                <h3 className="mt-2 text-sm font-medium text-ink">
+                  {entry.displayName}
+                </h3>
+              </div>
+              {renderBadge(entry.currentState, entry.currentState)}
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {summaryItem("Current state", entry.currentState)}
+              {summaryItem("Target state", entry.targetState)}
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded border border-border bg-paper/70 p-3">
+                <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+                  Evidence target
+                </p>
+                <p className="mt-2 text-sm text-muted">
+                  {entry.evidenceTarget}
+                </p>
+                <p className="mt-3 text-xs text-muted">
+                  Markets: {entry.marketLabels.join(", ")}. Modes:{" "}
+                  {entry.supportedModes.length > 0
+                    ? entry.supportedModes.join(", ")
+                    : "n/a"}
+                  .
+                </p>
+              </div>
+              <div className="rounded border border-border bg-paper/70 p-3">
+                <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+                  Controls
+                </p>
+                <p className="mt-2 text-sm text-muted">{entry.disableDrill}</p>
+                <p className="mt-3 text-xs text-muted">
+                  Canary: {entry.canaryPlan}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 text-xs text-muted sm:grid-cols-2">
+              <p>
+                Issues #{entry.integrationIssueNumber}
+                {entry.terminalIssueNumber
+                  ? ` · #${entry.terminalIssueNumber}`
+                  : ""}
+                {entry.liveSmokeIssueNumber
+                  ? ` · #${entry.liveSmokeIssueNumber}`
+                  : ""}
+              </p>
+              <p>
+                Agent-ready after{" "}
+                {entry.nextReadyIssueNumbers.length > 0
+                  ? entry.nextReadyIssueNumbers
+                      .map((issueNumber) => `#${issueNumber}`)
+                      .join(", ")
+                  : "current queue"}
+              </p>
+            </div>
+            <p className="mt-3 text-sm text-muted">{entry.notes}</p>
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -149,6 +269,317 @@ function renderCanarySummary(snapshot: RuntimeOperatorSnapshot | null) {
         "Reconciliation",
         readString(latestRun.reconciliationStatus) ?? "n/a",
       )}
+    </div>
+  );
+}
+
+function renderInfrastructureReadiness(
+  snapshot: RuntimeOperatorSnapshot | null,
+) {
+  const integration = isRecord(snapshot?.integration)
+    ? snapshot.integration
+    : {};
+  const health = isRecord(snapshot?.health) ? snapshot.health : {};
+  const routes = isRecord(snapshot?.routes) ? snapshot.routes : {};
+  const routeEntries = Object.entries(routes);
+  const feedGateway = isRecord(health.feedGateway) ? health.feedGateway : {};
+  const featureCache = isRecord(health.featureCache) ? health.featureCache : {};
+  const oracleRegistry = isRecord(health.oracleRegistry)
+    ? health.oracleRegistry
+    : {};
+  const strategyRegistry = isRecord(health.strategyRegistry)
+    ? health.strategyRegistry
+    : {};
+  const researchRegistry = isRecord(health.researchRegistry)
+    ? health.researchRegistry
+    : {};
+  const cards = [
+    {
+      key: "feed-gateway",
+      label: "Feed gateway",
+      status: readString(feedGateway.status) ?? "unknown",
+      detail: `${readString(feedGateway.maxMarketAgeMs) ?? String(feedGateway.maxMarketAgeMs ?? "n/a")} ms max market age`,
+    },
+    {
+      key: "feature-cache",
+      label: "Feature cache",
+      status: readString(featureCache.status) ?? "unknown",
+      detail: `${readString(featureCache.maxFeatureAgeMs) ?? String(featureCache.maxFeatureAgeMs ?? "n/a")} ms max feature age`,
+    },
+    {
+      key: "oracle-registry",
+      label: "Oracle registry",
+      status: readString(oracleRegistry.status) ?? "unknown",
+      detail: `${readString(oracleRegistry.staleInstrumentCount) ?? String(oracleRegistry.staleInstrumentCount ?? "0")} stale instruments`,
+    },
+    {
+      key: "strategy-registry",
+      label: "Strategy registry",
+      status: readString(strategyRegistry.status) ?? "unknown",
+      detail: `${readString(strategyRegistry.deploymentCount) ?? String(strategyRegistry.deploymentCount ?? "0")} deployments`,
+    },
+    {
+      key: "research-registry",
+      label: "Research registry",
+      status: readString(researchRegistry.status) ?? "unknown",
+      detail: `${readString(researchRegistry.experimentCount) ?? String(researchRegistry.experimentCount ?? "0")} experiments`,
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {summaryItem(
+          "Runtime service",
+          readString(integration.serviceName) ?? "runtime-rs",
+        )}
+        {summaryItem(
+          "Runtime base",
+          readString(integration.runtimeBaseUrl) ?? "not configured",
+        )}
+        {summaryItem(
+          "Stub mode",
+          readBoolean(integration.stubModeEnabled, false) ? "enabled" : "off",
+        )}
+        {summaryItem("Route inventory", String(routeEntries.length))}
+      </div>
+      <div className="grid gap-3 xl:grid-cols-5">
+        {cards.map((card) => (
+          <article
+            key={card.key}
+            className="rounded border border-border bg-surface/80 p-3"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+                {card.label}
+              </p>
+              {renderBadge(card.status)}
+            </div>
+            <p className="mt-3 text-sm text-muted">{card.detail}</p>
+          </article>
+        ))}
+      </div>
+      <div className="rounded border border-border bg-surface/70 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+              Route availability
+            </p>
+            <p className="mt-2 text-sm text-muted">
+              Runtime health and deployment routes currently advertised by the
+              worker bridge.
+            </p>
+          </div>
+          {renderBadge(
+            routeEntries.length > 0 ? "healthy" : "blocked",
+            routeEntries.length > 0 ? "available" : "missing",
+          )}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {routeEntries.length > 0 ? (
+            routeEntries.map(([routeKey, routeValue]) => (
+              <span
+                key={routeKey}
+                className="rounded border border-border px-2 py-1 text-[10px] uppercase tracking-[0.24em] text-muted"
+              >
+                {routeKey}: {String(routeValue)}
+              </span>
+            ))
+          ) : (
+            <p className="text-sm text-muted">No runtime routes advertised.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function renderTerminalRollout(detail: RuntimeOperatorDetail | null) {
+  const rolloutPolicy = resolveTerminalVenueRolloutPolicy();
+  const selectedVenueKey = readString(detail?.deployment?.venueKey);
+  const readinessVenue = detail?.lab?.readiness?.venue ?? null;
+  const readinessArtifacts = readRecordArray(readinessVenue?.artifacts);
+  const readinessCanaries = readRecordArray(readinessVenue?.canaryRuns);
+  const latestVenueArtifact = readinessArtifacts[0] ?? null;
+  const latestVenueCanary = readinessCanaries[0] ?? null;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {summaryItem(
+          "Enabled venues",
+          String(rolloutPolicy.enabledVenues.length),
+        )}
+        {summaryItem(
+          "Enabled families",
+          String(rolloutPolicy.enabledFamilies.length),
+        )}
+        {summaryItem("Selected venue", selectedVenueKey ?? "n/a")}
+        {summaryItem(
+          "Selected canary",
+          readString(latestVenueCanary?.status) ??
+            readString(latestVenueArtifact?.status) ??
+            "n/a",
+        )}
+      </div>
+      <div className="grid gap-3 xl:grid-cols-2">
+        {TERMINAL_VENUE_KEYS.map((venueKey) => {
+          const definition = getTerminalVenueDefinition(venueKey);
+          if (!definition) return null;
+          const rolloutEnabled = isTerminalVenueEnabled(venueKey);
+          const enabledFamilies = definition.families.filter((family) =>
+            rolloutPolicy.enabledFamilies.includes(family),
+          );
+          const selected = venueKey === selectedVenueKey;
+          return (
+            <article
+              key={venueKey}
+              className={`rounded border p-4 ${
+                selected
+                  ? "border-ink bg-surface"
+                  : "border-border bg-surface/80"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+                    {definition.executionPathLabel}
+                  </p>
+                  <h3 className="mt-2 text-sm font-medium text-ink">
+                    {definition.label}
+                  </h3>
+                </div>
+                {renderBadge(
+                  rolloutEnabled ? "healthy" : "blocked",
+                  rolloutEnabled ? "rollout enabled" : "rollout gated",
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {renderBadge(
+                  definition.executionReadiness,
+                  getTerminalVenueExecutionReadinessLabel(
+                    definition.executionReadiness,
+                  ),
+                )}
+                {selected && latestVenueCanary
+                  ? renderBadge(
+                      readString(latestVenueCanary.status) ?? "pending",
+                      "selected canary",
+                    )
+                  : null}
+              </div>
+              <p className="mt-3 text-sm text-muted">
+                Families in rollout:{" "}
+                {enabledFamilies.length > 0
+                  ? enabledFamilies
+                      .map((family) => getTerminalIntentFamilyLabel(family))
+                      .filter(Boolean)
+                      .join(", ")
+                  : "none enabled"}
+              </p>
+            </article>
+          );
+        })}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {TERMINAL_INTENT_FAMILIES.map((family) => {
+          const label = getTerminalIntentFamilyLabel(family) ?? family;
+          const enabled = rolloutPolicy.enabledFamilies.includes(family);
+          const supportedVenueCount = TERMINAL_VENUE_KEYS.filter((venueKey) => {
+            const definition = getTerminalVenueDefinition(venueKey);
+            return Boolean(definition?.families.includes(family));
+          }).length;
+          return (
+            <article
+              key={family}
+              className="rounded border border-border bg-surface/80 p-4"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-ink">{label}</p>
+                {renderBadge(
+                  enabled ? "healthy" : "blocked",
+                  enabled ? "enabled" : "gated",
+                )}
+              </div>
+              <p className="mt-3 text-sm text-muted">
+                {supportedVenueCount} venue rail
+                {supportedVenueCount === 1 ? "" : "s"} support this family.
+              </p>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function renderProofSurfaces(detail: RuntimeOperatorDetail | null) {
+  const readiness = detail?.lab?.readiness ?? null;
+  const subjects = [readiness?.venue, readiness?.asset].filter(
+    (entry): entry is NonNullable<typeof entry> => entry !== null,
+  );
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <div className="rounded border border-border bg-surface/80 p-4">
+        <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+          Proof surfaces
+        </p>
+        <p className="mt-2 text-sm text-muted">
+          Open deterministic browser and runtime proof surfaces directly from
+          the operator page.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link className={BTN_PRIMARY} href="/proof/runtime">
+            Runtime proof
+          </Link>
+          <Link className={BTN_SECONDARY} href="/proof/browser">
+            Browser proof
+          </Link>
+        </div>
+      </div>
+      <div className="rounded border border-border bg-surface/80 p-4">
+        <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+          Readiness artifacts
+        </p>
+        <div className="mt-3 space-y-3">
+          {subjects.length > 0 ? (
+            subjects.map((subject) => {
+              const artifact = readRecordArray(subject.artifacts)[0] ?? null;
+              const canary = readRecordArray(subject.canaryRuns)[0] ?? null;
+              const label =
+                readString(subject.subjectKind) === "asset" ? "Asset" : "Venue";
+              return (
+                <div
+                  key={`${readString(subject.subjectKind)}:${readString(subject.subjectKey)}`}
+                  className="rounded border border-border bg-paper/70 p-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-ink">
+                      {label}: {readString(subject.subjectKey) ?? "unknown"}
+                    </p>
+                    {renderBadge(
+                      readString(artifact?.status) ??
+                        readString(canary?.status) ??
+                        "candidate",
+                    )}
+                  </div>
+                  <div className="mt-3 grid gap-2 text-sm text-muted">
+                    <p>
+                      readiness id: {readString(artifact?.readinessId) ?? "n/a"}
+                    </p>
+                    <p>canary id: {readString(canary?.runId) ?? "n/a"}</p>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <p className="text-sm text-muted">
+              No readiness artifacts are attached to the selected deployment.
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -881,6 +1312,7 @@ function renderReadinessControls(
   actionPending: string | null,
   onSubjectControl?: (input: RuntimeOperatorSubjectControlInput) => void,
   onReadinessCanary?: (input: RuntimeOperatorReadinessCanaryInput) => void,
+  onVenueTxSmoke?: (input: RuntimeOperatorVenueTxSmokeInput) => void,
 ) {
   const deployment = detail?.deployment ?? null;
   const readiness = detail?.lab?.readiness ?? null;
@@ -904,6 +1336,7 @@ function renderReadinessControls(
       {subjects.map((subject) => {
         const subjectKind =
           readString(subject.subjectKind) === "asset" ? "asset" : "venue";
+        const isVenueSubject = subjectKind === "venue";
         const subjectKey = readString(subject.subjectKey) ?? "unknown";
         const controls = readRecordArray(subject.controls);
         const artifacts = readRecordArray(subject.artifacts);
@@ -939,12 +1372,31 @@ function renderReadinessControls(
           pairSymbol: deployment.pair.symbol,
           targetNotionalUsd: "5.00",
         };
+        const smokeInput: RuntimeOperatorVenueTxSmokeInput | null =
+          isVenueSubject
+            ? {
+                subjectKind: "venue",
+                subjectKey,
+                venueKey: subjectKey,
+                assetKey,
+                pairSymbol: deployment.pair.symbol,
+                targetNotionalUsd: "5.00",
+                smokeIntentFamily: "spot_swap",
+                tightenOnFailure: true,
+                failureControlMode: "disable_live",
+                killDrillNotes: [
+                  `Tighten ${subjectKey} only; do not widen to runtime-wide pause.`,
+                ],
+              }
+            : null;
         const liveTogglePending =
           actionPending === buildSubjectActionKey(liveToggleInput);
         const killTogglePending =
           actionPending === buildSubjectActionKey(killToggleInput);
         const canaryPending =
-          actionPending === buildReadinessCanaryActionKey(canaryInput);
+          isVenueSubject && smokeInput
+            ? actionPending === buildVenueTxSmokeActionKey(smokeInput)
+            : actionPending === buildReadinessCanaryActionKey(canaryInput);
 
         return (
           <article
@@ -985,7 +1437,7 @@ function renderReadinessControls(
                 readString(latestArtifact?.targetState) ?? "n/a",
               )}
               {summaryItem(
-                "Latest canary",
+                isVenueSubject ? "Latest tx smoke" : "Latest canary",
                 readString(latestCanary?.status) ?? "not run",
               )}
             </div>
@@ -1045,10 +1497,24 @@ function renderReadinessControls(
                   <button
                     className={BTN_PRIMARY}
                     type="button"
-                    onClick={() => onReadinessCanary?.(canaryInput)}
-                    disabled={!onReadinessCanary}
+                    onClick={() =>
+                      isVenueSubject
+                        ? smokeInput && onVenueTxSmoke?.(smokeInput)
+                        : onReadinessCanary?.(canaryInput)
+                    }
+                    disabled={
+                      isVenueSubject
+                        ? !onVenueTxSmoke || !smokeInput
+                        : !onReadinessCanary
+                    }
                   >
-                    {canaryPending ? "Running canary..." : "Run canary"}
+                    {canaryPending
+                      ? isVenueSubject
+                        ? "Running tx smoke..."
+                        : "Running canary..."
+                      : isVenueSubject
+                        ? "Run tx smoke"
+                        : "Run canary"}
                   </button>
                 </div>
               </div>
@@ -1071,6 +1537,7 @@ export function RuntimeOperatorView({
   onControl,
   onSubjectControl,
   onReadinessCanary,
+  onVenueTxSmoke,
 }: RuntimeOperatorViewProps) {
   const runtime = payload?.runtime ?? null;
   const detail = payload?.detail ?? null;
@@ -1226,6 +1693,39 @@ export function RuntimeOperatorView({
           <section className="card p-5">
             <div className="mb-4">
               <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+                Infrastructure readiness
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-ink">
+                Feed, oracle, registry, and route health
+              </h2>
+            </div>
+            {renderInfrastructureReadiness(runtime)}
+          </section>
+          <section className="card p-5">
+            <div className="mb-4">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+                Terminal rollout
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-ink">
+                Venue and family exposure tied to rollout state
+              </h2>
+            </div>
+            {renderTerminalRollout(detail)}
+          </section>
+          <section className="card p-5">
+            <div className="mb-4">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+                Proof and readiness
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-ink">
+                Proof surfaces and latest readiness artifacts
+              </h2>
+            </div>
+            {renderProofSurfaces(detail)}
+          </section>
+          <section className="card p-5">
+            <div className="mb-4">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
                 Candidate leaderboard
               </p>
               <h2 className="mt-2 text-lg font-semibold text-ink">
@@ -1233,6 +1733,21 @@ export function RuntimeOperatorView({
               </h2>
             </div>
             {renderLeaderboard(runtime)}
+          </section>
+
+          <section className="card p-5">
+            <div className="mb-4">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-muted">
+                Venue program matrix
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-ink">
+                Readiness targets, canary posture, and disable drills by venue
+              </h2>
+            </div>
+            {renderProgramMatrix(
+              payload?.program.matrix ?? [],
+              payload?.program.nextIssueOrder ?? [],
+            )}
           </section>
 
           <section className="card p-5">
@@ -1309,6 +1824,7 @@ export function RuntimeOperatorView({
               actionPending,
               onSubjectControl,
               onReadinessCanary,
+              onVenueTxSmoke,
             )}
           </section>
 

@@ -7,6 +7,10 @@ import {
   safeParseRuntimeLedgerSnapshot,
   safeParseRuntimeRunRecord,
 } from "../../../../lib/runtime-contracts";
+import {
+  listRuntimeVenueProgramMatrix,
+  RUNTIME_VENUE_PROGRAM_NEXT_ISSUES,
+} from "../../../terminal/runtime/program-matrix";
 
 const LOCAL_EDGE_API_BASE = "http://127.0.0.1:8888";
 const BEARER_RE = /^bearer\s+/i;
@@ -235,6 +239,7 @@ function normalizeRuntimeSnapshot(payload: Record<string, unknown>) {
     source: readString(runtime.source) ?? "worker",
     integration: isRecord(runtime.integration) ? runtime.integration : {},
     health: isRecord(runtime.health) ? runtime.health : null,
+    routes: isRecord(runtime.routes) ? runtime.routes : null,
     deployments: parseDeployments(runtime.deployments),
     controls: normalizeControls(runtime.controls),
     canary: isRecord(runtime.canary) ? runtime.canary : null,
@@ -602,6 +607,10 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     runtime,
+    program: {
+      matrix: listRuntimeVenueProgramMatrix(),
+      nextIssueOrder: [...RUNTIME_VENUE_PROGRAM_NEXT_ISSUES],
+    },
     selectedDeploymentId,
     detail,
     detailError,
@@ -755,6 +764,71 @@ export async function POST(request: Request) {
         ...(readString(payload.targetNotionalUsd)
           ? { targetNotionalUsd: readString(payload.targetNotionalUsd) }
           : {}),
+      },
+    });
+    return NextResponse.json(result.payload, { status: result.status });
+  }
+
+  if (action === "run_venue_tx_smoke") {
+    const subjectKind = payload.subjectKind === "venue" ? "venue" : null;
+    const subjectKey = readString(payload.subjectKey);
+    if (!subjectKind || !subjectKey) {
+      return NextResponse.json(
+        { ok: false, error: "invalid-runtime-operator-action" },
+        { status: 400 },
+      );
+    }
+    const result = await requestWorkerJson({
+      path: "/api/admin/ops/runtime/research/readiness/smoke",
+      method: "POST",
+      authHeader: `Bearer ${adminToken}`,
+      body: {
+        subjectKind,
+        subjectKey,
+        requestedBy: operatorActor,
+        triggerSource: "manual",
+        proofMode: "venue_tx_smoke",
+        ...(readString(payload.venueKey)
+          ? { venueKey: readString(payload.venueKey) }
+          : {}),
+        ...(readString(payload.assetKey)
+          ? { assetKey: readString(payload.assetKey) }
+          : {}),
+        ...(readString(payload.pairSymbol)
+          ? { pairSymbol: readString(payload.pairSymbol) }
+          : {}),
+        ...(readString(payload.adapterKey)
+          ? { adapterKey: readString(payload.adapterKey) }
+          : {}),
+        ...(readString(payload.targetNotionalUsd)
+          ? { targetNotionalUsd: readString(payload.targetNotionalUsd) }
+          : {}),
+        ...(payload.smokeIntentFamily === "spot_swap" ||
+        payload.smokeIntentFamily === "conditional_spot_order" ||
+        payload.smokeIntentFamily === "clob_order" ||
+        payload.smokeIntentFamily === "prediction_order" ||
+        payload.smokeIntentFamily === "flash_atomic"
+          ? { smokeIntentFamily: payload.smokeIntentFamily }
+          : {}),
+        ...(payload.smokeOrderSide === "buy" ||
+        payload.smokeOrderSide === "sell"
+          ? { smokeOrderSide: payload.smokeOrderSide }
+          : {}),
+        ...(typeof payload.tightenOnFailure === "boolean"
+          ? { tightenOnFailure: payload.tightenOnFailure }
+          : {}),
+        ...(payload.failureControlMode === "disable_live" ||
+        payload.failureControlMode === "engage_kill_switch"
+          ? { failureControlMode: payload.failureControlMode }
+          : {}),
+        ...(Array.isArray(payload.killDrillNotes)
+          ? {
+              killDrillNotes: payload.killDrillNotes
+                .map((entry) => readString(entry))
+                .filter((entry): entry is string => Boolean(entry)),
+            }
+          : {}),
+        ...(isRecord(payload.metadata) ? { metadata: payload.metadata } : {}),
       },
     });
     return NextResponse.json(result.payload, { status: result.status });

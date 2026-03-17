@@ -229,6 +229,10 @@ describe("portal runtime operator route", () => {
               health: {
                 status: "healthy",
               },
+              routes: {
+                health: "/api/internal/runtime/health",
+                deployments: "/api/internal/runtime/deployments",
+              },
               deployments: [runtimeDeploymentFixture()],
               controls: {
                 enabled: true,
@@ -468,11 +472,16 @@ describe("portal runtime operator route", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    const payload = (await response.json()) as Record<string, unknown>;
+    expect(payload).toMatchObject({
       ok: true,
       selectedDeploymentId: "runtime_canary_live_dca",
       runtime: {
         ok: true,
+        routes: {
+          health: "/api/internal/runtime/health",
+          deployments: "/api/internal/runtime/deployments",
+        },
         deployments: [
           {
             deploymentId: "runtime_canary_live_dca",
@@ -518,6 +527,23 @@ describe("portal runtime operator route", () => {
         },
       },
     });
+    const program = payload.program as {
+      matrix?: Array<Record<string, unknown>>;
+      nextIssueOrder?: number[];
+    };
+    expect(program.nextIssueOrder?.slice(0, 3)).toEqual([389, 380, 392]);
+    expect(
+      program.matrix?.some(
+        (entry) =>
+          entry.subjectKey === "jupiter" && entry.liveSmokeIssueNumber === 412,
+      ),
+    ).toBe(true);
+    expect(
+      program.matrix?.some(
+        (entry) =>
+          entry.subjectKey === "drift" && entry.terminalIssueNumber === 389,
+      ),
+    ).toBe(true);
     expect(seenAuthHeaders[0]).toBe("Bearer user-token");
     expect(seenAuthHeaders.slice(1)).toHaveLength(12);
     expect(
@@ -710,7 +736,8 @@ describe("portal runtime operator route", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(JSON.parse(capturedBody)).toMatchObject({
+    const parsedBody = JSON.parse(capturedBody) as Record<string, unknown>;
+    expect(parsedBody).toMatchObject({
       subjectKind: "asset",
       subjectKey: "SOL",
       venueKey: "jupiter",
@@ -719,10 +746,262 @@ describe("portal runtime operator route", () => {
       requestedBy: "operator@example.com",
       triggerSource: "manual",
     });
+    expect(parsedBody).not.toHaveProperty("proofMode");
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       run: {
         runId: "readycanary_sol",
+      },
+    });
+  });
+
+  test("forwards venue tx smoke actions with operator identity", async () => {
+    process.env.NEXT_PUBLIC_EDGE_API_BASE = "https://api.trader-ralph.com";
+    process.env.RUNTIME_OPERATOR_ADMIN_TOKEN = "operator-admin";
+    process.env.RUNTIME_OPERATOR_USER_ALLOWLIST = "u_1";
+
+    let capturedBody = "";
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = String(input);
+      if (url.endsWith("/api/me")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            user: { id: "u_1", email: "operator@example.com" },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (url.endsWith("/api/admin/ops/runtime/research/readiness/smoke")) {
+        capturedBody = String(init?.body ?? "");
+        return new Response(
+          JSON.stringify({ ok: true, run: { runId: "smoke_jupiter" } }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }) as typeof fetch;
+
+    const response = await POST(
+      new Request("https://www.trader-ralph.com/api/runtime/operator", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer user-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "run_venue_tx_smoke",
+          subjectKind: "venue",
+          subjectKey: "openbook",
+          venueKey: "openbook",
+          assetKey: "SOL",
+          pairSymbol: "SOL/USDC",
+          targetNotionalUsd: "5.00",
+          smokeIntentFamily: "clob_order",
+          smokeOrderSide: "buy",
+          tightenOnFailure: true,
+          failureControlMode: "disable_live",
+          killDrillNotes: ["Disable OpenBook only."],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(capturedBody)).toMatchObject({
+      subjectKind: "venue",
+      subjectKey: "openbook",
+      venueKey: "openbook",
+      assetKey: "SOL",
+      pairSymbol: "SOL/USDC",
+      targetNotionalUsd: "5.00",
+      requestedBy: "operator@example.com",
+      triggerSource: "manual",
+      proofMode: "venue_tx_smoke",
+      smokeIntentFamily: "clob_order",
+      smokeOrderSide: "buy",
+      tightenOnFailure: true,
+      failureControlMode: "disable_live",
+      killDrillNotes: ["Disable OpenBook only."],
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      run: {
+        runId: "smoke_jupiter",
+      },
+    });
+  });
+
+  test("forwards flash venue tx smoke actions", async () => {
+    process.env.NEXT_PUBLIC_EDGE_API_BASE = "https://api.trader-ralph.com";
+    process.env.RUNTIME_OPERATOR_ADMIN_TOKEN = "operator-admin";
+    process.env.RUNTIME_OPERATOR_USER_ALLOWLIST = "u_1";
+
+    let capturedBody = "";
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = String(input);
+      if (url.endsWith("/api/me")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            user: { id: "u_1", email: "operator@example.com" },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (url.endsWith("/api/admin/ops/runtime/research/readiness/smoke")) {
+        capturedBody = String(init?.body ?? "");
+        return new Response(
+          JSON.stringify({ ok: true, run: { runId: "smoke_flash" } }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }) as typeof fetch;
+
+    const response = await POST(
+      new Request("https://www.trader-ralph.com/api/runtime/operator", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer user-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "run_venue_tx_smoke",
+          subjectKind: "venue",
+          subjectKey: "flash_liquidity",
+          venueKey: "flash_liquidity",
+          assetKey: "USDC",
+          pairSymbol: "USDC/USDC",
+          targetNotionalUsd: "1.00",
+          smokeIntentFamily: "flash_atomic",
+          tightenOnFailure: true,
+          failureControlMode: "disable_live",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(capturedBody)).toMatchObject({
+      subjectKind: "venue",
+      subjectKey: "flash_liquidity",
+      venueKey: "flash_liquidity",
+      assetKey: "USDC",
+      pairSymbol: "USDC/USDC",
+      targetNotionalUsd: "1.00",
+      requestedBy: "operator@example.com",
+      triggerSource: "manual",
+      proofMode: "venue_tx_smoke",
+      smokeIntentFamily: "flash_atomic",
+      tightenOnFailure: true,
+      failureControlMode: "disable_live",
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      run: {
+        runId: "smoke_flash",
+      },
+    });
+  });
+
+  test("forwards prediction venue smoke metadata", async () => {
+    process.env.NEXT_PUBLIC_EDGE_API_BASE = "https://api.trader-ralph.com";
+    process.env.RUNTIME_OPERATOR_ADMIN_TOKEN = "operator-admin";
+    process.env.RUNTIME_OPERATOR_USER_ALLOWLIST = "u_1";
+
+    let capturedBody = "";
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = String(input);
+      if (url.endsWith("/api/me")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            user: { id: "u_1", email: "operator@example.com" },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (url.endsWith("/api/admin/ops/runtime/research/readiness/smoke")) {
+        capturedBody = String(init?.body ?? "");
+        return new Response(
+          JSON.stringify({ ok: true, run: { runId: "smoke_dflow" } }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }) as typeof fetch;
+
+    const response = await POST(
+      new Request("https://www.trader-ralph.com/api/runtime/operator", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer user-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "run_venue_tx_smoke",
+          subjectKind: "venue",
+          subjectKey: "dflow",
+          venueKey: "dflow",
+          pairSymbol: "PRES-2028",
+          smokeIntentFamily: "prediction_order",
+          smokeOrderSide: "buy",
+          metadata: {
+            instrumentId: "PRES-2028",
+            outcomeId: "YesMint1111111111111111111111111111111",
+            outcomeSide: "yes",
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(capturedBody)).toMatchObject({
+      subjectKind: "venue",
+      subjectKey: "dflow",
+      venueKey: "dflow",
+      pairSymbol: "PRES-2028",
+      requestedBy: "operator@example.com",
+      triggerSource: "manual",
+      proofMode: "venue_tx_smoke",
+      smokeIntentFamily: "prediction_order",
+      smokeOrderSide: "buy",
+      metadata: {
+        instrumentId: "PRES-2028",
+        outcomeId: "YesMint1111111111111111111111111111111",
+        outcomeSide: "yes",
+      },
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      run: {
+        runId: "smoke_dflow",
       },
     });
   });

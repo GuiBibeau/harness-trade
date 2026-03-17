@@ -257,11 +257,41 @@ async function enforceStrategyLabSubjectControls(input: {
   }
 }
 
+function allowsVenueTxSmokeLiveBypass(input: {
+  venueKey: string;
+  runtimeMode?: RuntimeMode;
+  intentFamily: ExecutionIntentFamily;
+  experimentalLiveModeBypass?: "venue_tx_smoke";
+  subjectControlBypassReason?: ExecuteIntentInput["subjectControlBypassReason"];
+}): boolean {
+  if (
+    input.runtimeMode !== "live" ||
+    input.experimentalLiveModeBypass !== "venue_tx_smoke" ||
+    input.subjectControlBypassReason !== "strategy_lab_readiness_canary"
+  ) {
+    return false;
+  }
+  if (input.intentFamily === "spot_swap") {
+    return input.venueKey === "raydium" || input.venueKey === "orca";
+  }
+  if (input.intentFamily === "clob_order") {
+    return input.venueKey === "openbook";
+  }
+  if (input.intentFamily === "prediction_order") {
+    return input.venueKey === "dflow";
+  }
+  if (input.intentFamily === "flash_atomic") {
+    return input.venueKey === "flash_liquidity";
+  }
+  return input.intentFamily === "perp_order" && input.venueKey === "drift";
+}
+
 async function resolveExecutionAdapterForIntent(input: {
   env: ExecuteIntentInput["env"];
   execution: ExecuteIntentInput["execution"];
   venueKey: string;
   runtimeMode?: RuntimeMode;
+  experimentalLiveModeBypass?: ExecuteIntentInput["experimentalLiveModeBypass"];
   requireVenueRouting?: boolean;
   subjectControlBypassReason?: ExecuteIntentInput["subjectControlBypassReason"];
   intentFamily: ExecutionIntentFamily;
@@ -288,6 +318,13 @@ async function resolveExecutionAdapterForIntent(input: {
   if (runtimeMode && !venueKey) {
     throw new Error("runtime-venue-required");
   }
+  const allowSmokeLiveBypass = allowsVenueTxSmokeLiveBypass({
+    venueKey,
+    runtimeMode,
+    intentFamily: input.intentFamily,
+    experimentalLiveModeBypass: input.experimentalLiveModeBypass,
+    subjectControlBypassReason: input.subjectControlBypassReason,
+  });
   if (venueKey) {
     const capability = requireRuntimeVenueCapability(venueKey);
     if (registration.venueKey !== venueKey) {
@@ -305,7 +342,11 @@ async function resolveExecutionAdapterForIntent(input: {
         `runtime-venue-intent-family-not-supported:${venueKey}:${input.intentFamily}`,
       );
     }
-    if (runtimeMode && !runtimeVenueSupportsMode(capability, runtimeMode)) {
+    if (
+      runtimeMode &&
+      !runtimeVenueSupportsMode(capability, runtimeMode) &&
+      !(allowSmokeLiveBypass && runtimeMode === "live")
+    ) {
       throw new Error(
         `runtime-venue-mode-not-supported:${venueKey}:${runtimeMode}`,
       );
@@ -320,7 +361,11 @@ async function resolveExecutionAdapterForIntent(input: {
       });
     }
   }
-  if (runtimeMode && !registration.supportedModes.includes(runtimeMode)) {
+  if (
+    runtimeMode &&
+    !registration.supportedModes.includes(runtimeMode) &&
+    !(allowSmokeLiveBypass && runtimeMode === "live")
+  ) {
     throw new Error(
       `execution-adapter-mode-unsupported:${adapterName}:${runtimeMode}`,
     );
@@ -347,6 +392,7 @@ export async function executeIntentViaRouter(
     execution: input.execution,
     venueKey,
     runtimeMode: input.runtimeMode,
+    experimentalLiveModeBypass: input.experimentalLiveModeBypass,
     requireVenueRouting: input.requireVenueRouting,
     subjectControlBypassReason: input.subjectControlBypassReason,
     intentFamily: input.intent.family,
@@ -409,6 +455,7 @@ export async function executeIntentViaRouter(
     env: input.env,
     venueKey,
     runtimeMode: input.runtimeMode,
+    experimentalLiveModeBypass: input.experimentalLiveModeBypass,
     requireVenueRouting: input.requireVenueRouting,
     subjectControlBypassReason: input.subjectControlBypassReason,
     execution: input.execution,
