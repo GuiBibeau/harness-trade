@@ -109,7 +109,8 @@ function handoffFixture() {
     currentState: "operator_review",
     targetMode: "limited_live",
     status: "approved",
-    summary: "Bound the spot leg to limited live while keeping overlays paper-bound.",
+    summary:
+      "Bound the spot leg to limited live while keeping overlays paper-bound.",
     requestedBy: "operator_1",
     createdAt: FIXTURE_TIME,
     updatedAt: FIXTURE_TIME,

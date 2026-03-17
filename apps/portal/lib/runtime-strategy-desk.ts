@@ -389,7 +389,14 @@ export function safeParseRuntimeStrategyDeskPromotionHandoffEvent(
   const actor = readString(value.actor);
   const summary = readString(value.summary);
   const createdAt = readString(value.createdAt);
-  if (!eventId || !handoffId || !eventType || !actor || !summary || !createdAt) {
+  if (
+    !eventId ||
+    !handoffId ||
+    !eventType ||
+    !actor ||
+    !summary ||
+    !createdAt
+  ) {
     return fail("strategy-desk-handoff-event-invalid");
   }
   return {
@@ -411,7 +418,8 @@ export function safeParseRuntimeStrategyDeskPromotionHandoffEvent(
 export function safeParseRuntimeStrategyDeskExecutionRecipe(
   value: unknown,
 ): ParseResult<RuntimeStrategyDeskExecutionRecipe> {
-  if (!isRecord(value)) return fail("strategy-desk-execution-recipe-not-object");
+  if (!isRecord(value))
+    return fail("strategy-desk-execution-recipe-not-object");
   const recipeId = readString(value.recipeId);
   const scenarioId = readString(value.scenarioId);
   const handoffId = readString(value.handoffId);

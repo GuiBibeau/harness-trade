@@ -751,7 +751,8 @@ function parseRuntimeStrategyDeskPrepareHandoffRequest(payload: unknown): {
   }
   const record = payload as Record<string, unknown>;
   const requestedBy = String(record.requestedBy ?? "").trim();
-  const targetMode = record.targetMode === "limited_live" ? "limited_live" : undefined;
+  const targetMode =
+    record.targetMode === "limited_live" ? "limited_live" : undefined;
   if (!requestedBy) {
     throw new Error("runtime-strategy-desk-handoff-prepare-invalid-body");
   }
@@ -4384,12 +4385,11 @@ const worker = {
           const handoff = parseRuntimeStrategyDeskPromotionHandoff(
             await request.json(),
           );
-          const result = await upsertRuntimeStrategyDeskPromotionHandoffWorkflow(
-            {
+          const result =
+            await upsertRuntimeStrategyDeskPromotionHandoffWorkflow({
               env,
               handoff,
-            },
-          );
+            });
           return withCors(
             json({
               ok: true,
@@ -4427,15 +4427,17 @@ const worker = {
         }
         try {
           const limitRaw = Number(url.searchParams.get("limit"));
-          const result = await listRuntimeStrategyDeskPromotionHandoffsWorkflow({
-            env,
-            handoffId: url.searchParams.get("handoffId") ?? undefined,
-            scenarioId: url.searchParams.get("scenarioId") ?? undefined,
-            status: url.searchParams.get("status") ?? undefined,
-            ...(Number.isFinite(limitRaw) && limitRaw > 0
-              ? { limit: Math.trunc(limitRaw) }
-              : {}),
-          });
+          const result = await listRuntimeStrategyDeskPromotionHandoffsWorkflow(
+            {
+              env,
+              handoffId: url.searchParams.get("handoffId") ?? undefined,
+              scenarioId: url.searchParams.get("scenarioId") ?? undefined,
+              status: url.searchParams.get("status") ?? undefined,
+              ...(Number.isFinite(limitRaw) && limitRaw > 0
+                ? { limit: Math.trunc(limitRaw) }
+                : {}),
+            },
+          );
           return withCors(
             json({
               ok: true,

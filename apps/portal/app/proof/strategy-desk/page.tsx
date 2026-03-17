@@ -499,7 +499,12 @@ function buildPayload(): StrategyDeskApiPayload {
       reports,
       handoffs,
       latestHandoff: handoffs[0],
-      handoffEvents: [handoffEventFixture("prepared", "Prepared a bounded execution handoff.")],
+      handoffEvents: [
+        handoffEventFixture(
+          "prepared",
+          "Prepared a bounded execution handoff.",
+        ),
+      ],
       executionRecipes: [],
       latestRun: runs[0],
       latestReport: reports[0],
@@ -652,13 +657,7 @@ export default function StrategyDeskProofPage() {
   }
 
   function applyHandoffAction(
-    action:
-      | "submit"
-      | "approve"
-      | "apply"
-      | "pause"
-      | "kill"
-      | "demote",
+    action: "submit" | "approve" | "apply" | "pause" | "kill" | "demote",
   ) {
     setActionPending(`handoff:${action}`);
     setPayload((current) => {
@@ -692,7 +691,7 @@ export default function StrategyDeskProofPage() {
               ? "applied"
               : action === "demote"
                 ? "archived"
-                : current.snapshot.latestHandoff?.status ?? "applied";
+                : (current.snapshot.latestHandoff?.status ?? "applied");
       const nextHandoff = handoffFixture(
         handoffStatus as RuntimeStrategyDeskPromotionHandoff["status"],
       );

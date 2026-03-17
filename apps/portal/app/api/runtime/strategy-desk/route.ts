@@ -368,7 +368,8 @@ function parsePrepareHandoffPayload(value: unknown): {
   if (!isRecord(value)) return null;
   const scenarioId = readString(value.scenarioId);
   const requestedBy = readString(value.requestedBy);
-  const targetMode = value.targetMode === "limited_live" ? "limited_live" : undefined;
+  const targetMode =
+    value.targetMode === "limited_live" ? "limited_live" : undefined;
   if (!scenarioId || !requestedBy) return null;
   return {
     scenarioId,

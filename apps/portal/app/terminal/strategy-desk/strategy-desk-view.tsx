@@ -192,7 +192,9 @@ function reportForDisplay(
   return latestReport ?? reports[0] ?? null;
 }
 
-function readCheckStatusCounts(handoff: RuntimeStrategyDeskPromotionHandoff | null) {
+function readCheckStatusCounts(
+  handoff: RuntimeStrategyDeskPromotionHandoff | null,
+) {
   let pass = 0;
   let blocked = 0;
   let human = 0;
@@ -598,9 +600,9 @@ export function StrategyDeskView({
                   Review, arm, and roll back from the desk
                 </h2>
                 <p className="mt-2 text-sm text-muted">
-                  Prepare a bounded handoff from the current paper evidence, then
-                  move it through explicit operator review before applying or
-                  rolling it back.
+                  Prepare a bounded handoff from the current paper evidence,
+                  then move it through explicit operator review before applying
+                  or rolling it back.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -646,9 +648,7 @@ export function StrategyDeskView({
                 <button
                   className={BTN_PRIMARY}
                   data-testid="strategy-desk-apply-handoff"
-                  disabled={
-                    actionPending === "handoff:apply" || !latestHandoff
-                  }
+                  disabled={actionPending === "handoff:apply" || !latestHandoff}
                   onClick={() => onTransitionHandoff?.("apply")}
                   type="button"
                 >
@@ -659,9 +659,7 @@ export function StrategyDeskView({
                 <button
                   className={BTN_SECONDARY}
                   data-testid="strategy-desk-pause-handoff"
-                  disabled={
-                    actionPending === "handoff:pause" || !latestHandoff
-                  }
+                  disabled={actionPending === "handoff:pause" || !latestHandoff}
                   onClick={() => onTransitionHandoff?.("pause")}
                   type="button"
                 >
@@ -670,9 +668,7 @@ export function StrategyDeskView({
                 <button
                   className={BTN_SECONDARY}
                   data-testid="strategy-desk-kill-handoff"
-                  disabled={
-                    actionPending === "handoff:kill" || !latestHandoff
-                  }
+                  disabled={actionPending === "handoff:kill" || !latestHandoff}
                   onClick={() => onTransitionHandoff?.("kill")}
                   type="button"
                 >
@@ -718,7 +714,8 @@ export function StrategyDeskView({
                       Handoff summary
                     </p>
                     <h3 className="mt-2 text-sm font-medium text-ink">
-                      {latestHandoff?.summary ?? "No bounded execution handoff prepared yet."}
+                      {latestHandoff?.summary ??
+                        "No bounded execution handoff prepared yet."}
                     </h3>
                   </div>
                   <div className="flex gap-2">
@@ -727,12 +724,15 @@ export function StrategyDeskView({
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  {summaryItem("Passed checks", String(handoffCheckCounts.pass))}
-                  {summaryItem("Blocked checks", String(handoffCheckCounts.blocked))}
                   {summaryItem(
-                    "Human gates",
-                    String(handoffCheckCounts.human),
+                    "Passed checks",
+                    String(handoffCheckCounts.pass),
                   )}
+                  {summaryItem(
+                    "Blocked checks",
+                    String(handoffCheckCounts.blocked),
+                  )}
+                  {summaryItem("Human gates", String(handoffCheckCounts.human))}
                 </div>
                 <div className="mt-4 space-y-3">
                   {readRecordArray(latestHandoff?.checks).length === 0 ? (
@@ -793,7 +793,11 @@ export function StrategyDeskView({
                         <p className="mt-2 text-xs text-muted">
                           {readString(binding.venueKey) ?? "venue"} ·{" "}
                           {readString(binding.instrumentId) ??
-                            readString(isRecord(binding.pair) ? binding.pair.symbol : null) ??
+                            readString(
+                              isRecord(binding.pair)
+                                ? binding.pair.symbol
+                                : null,
+                            ) ??
                             "pair"}
                         </p>
                       </div>
