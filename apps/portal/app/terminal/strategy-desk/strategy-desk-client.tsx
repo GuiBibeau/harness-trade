@@ -3,12 +3,13 @@
 import { usePrivy } from "@privy-io/react-auth";
 import { useEffect, useState, useTransition } from "react";
 import { StrategyDeskView } from "./strategy-desk-view";
-import type {
-  StrategyDeskApiPayload,
-  StrategyDeskExecuteRunKind,
-  StrategyDeskMutationResult,
-  StrategyDeskStudyRunKind,
-  StrategyDeskStudySelectionMetric,
+import {
+  type StrategyDeskApiPayload,
+  type StrategyDeskExecuteRunKind,
+  type StrategyDeskMutationResult,
+  type StrategyDeskStudyRunKind,
+  type StrategyDeskStudySelectionMetric,
+  selectStrategyDeskHandoffForAction,
 } from "./types";
 
 async function readJson<T>(response: Response): Promise<T | null> {
@@ -222,6 +223,56 @@ export function StrategyDeskClient() {
     }
   }
 
+  async function prepareHandoff() {
+    const scenarioId = payload?.snapshot.selectedScenarioId;
+    if (!scenarioId) {
+      setError("strategy-desk-scenario-required");
+      return;
+    }
+    await runAction(
+      {
+        action: "prepare_handoff",
+        scenarioId,
+        requestedBy,
+        targetMode: "limited_live",
+      },
+      "handoff:prepare",
+      scenarioId,
+    );
+  }
+
+  async function transitionHandoff(
+    action:
+      | "submit"
+      | "approve"
+      | "reject"
+      | "apply"
+      | "pause"
+      | "kill"
+      | "demote"
+      | "archive",
+  ) {
+    const scenarioId = payload?.snapshot.selectedScenarioId;
+    const handoffId = selectStrategyDeskHandoffForAction(
+      payload?.snapshot,
+      action,
+    )?.handoffId;
+    if (!scenarioId || !handoffId) {
+      setError("strategy-desk-handoff-required");
+      return;
+    }
+    await runAction(
+      {
+        action: "transition_handoff",
+        handoffId,
+        handoffAction: action,
+        actor: requestedBy,
+      },
+      `handoff:${action}`,
+      scenarioId,
+    );
+  }
+
   useEffect(() => {
     if (!ready) return;
     if (!authenticated) {
@@ -423,6 +474,28 @@ export function StrategyDeskClient() {
               cause instanceof Error
                 ? cause.message
                 : "strategy-desk-execute-failed",
+            );
+          });
+        });
+      }}
+      onPrepareHandoff={() => {
+        startTransition(() => {
+          void prepareHandoff().catch((cause) => {
+            setError(
+              cause instanceof Error
+                ? cause.message
+                : "strategy-desk-handoff-prepare-failed",
+            );
+          });
+        });
+      }}
+      onTransitionHandoff={(action) => {
+        startTransition(() => {
+          void transitionHandoff(action).catch((cause) => {
+            setError(
+              cause instanceof Error
+                ? cause.message
+                : "strategy-desk-handoff-transition-failed",
             );
           });
         });
