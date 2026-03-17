@@ -103,6 +103,11 @@ bun run strategy-desk:registry \
 Prepare:
 
 ```bash
+mkdir -p \
+  .tmp/strategy-desk-proof/desk_sol_composite_1/05-handoff \
+  .tmp/strategy-desk-proof/desk_sol_composite_1/06-drills \
+  .tmp/strategy-desk-proof/desk_sol_composite_1/07-browser-proof
+
 curl -fsS \
   "${DESK_BASE_URL}/api/admin/ops/runtime/strategy-desk/scenarios/desk_sol_composite_1/handoffs/prepare" \
   -X POST \
@@ -111,7 +116,7 @@ curl -fsS \
   --data @docs/strategy-desk/request-templates/desk-sol-composite/handoff.prepare.request.json \
   | tee .tmp/strategy-desk-proof/desk_sol_composite_1/05-handoff/01-prepare.json
 
-export HANDOFF_ID="${HANDOFF_ID:-$(jq -r '.handoff.handoffId' .tmp/strategy-desk-proof/desk_sol_composite_1/05-handoff/01-prepare.json)}"
+export HANDOFF_ID="$(jq -r '.handoff.handoffId' .tmp/strategy-desk-proof/desk_sol_composite_1/05-handoff/01-prepare.json)"
 test -n "${HANDOFF_ID}" && test "${HANDOFF_ID}" != "null"
 ```
 
