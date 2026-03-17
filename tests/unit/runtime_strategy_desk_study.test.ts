@@ -107,6 +107,7 @@ function buildBacktestReport(input: {
   tradeCount: number;
   maxDrawdownBps: string;
   excessVsFlatCashBps: string;
+  windowMode?: "rolling" | "expanding" | "anchored";
 }) {
   const base = readFixture("runtime.backtest_report.valid.v1.json") as Record<
     string,
@@ -121,6 +122,7 @@ function buildBacktestReport(input: {
     config: {
       ...(base.config as Record<string, unknown>),
       venueKey: input.venueKey,
+      windowMode: input.windowMode ?? "rolling",
     },
     aggregateMetrics: {
       observationCount: 4,
@@ -600,6 +602,89 @@ describe("runtime strategy desk study workflow", () => {
       expect(
         result.report.evidence.filter((bucket) => bucket.stage === "backtest"),
       ).toHaveLength(1);
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  test("accepts anchored study windows when the runtime backtest report echoes anchored mode", async () => {
+    const { env, sqlite } = createOpsEnv();
+    try {
+      const baseScenario = buildStudyScenario();
+      const baseMatrix = baseScenario.researchMatrix as Record<string, unknown>;
+      await upsertRuntimeStrategyDeskScenarioWorkflow({
+        env,
+        scenario: {
+          ...baseScenario,
+          researchMatrix: {
+            ...baseMatrix,
+            windows: [
+              {
+                windowId: "anchored_week_1",
+                label: "Anchored week 1",
+                cohort: "selection",
+                windowMode: "anchored",
+                trainingWindowObservations: 8,
+                testingWindowObservations: 4,
+                stepObservations: 4,
+                purgeObservations: 1,
+              },
+            ],
+          },
+        } as never,
+      });
+
+      const executeRuntimeStrategyDeskStudyWorkflow = await getStudyWorkflow();
+      const result = await executeRuntimeStrategyDeskStudyWorkflow(
+        {
+          env,
+          scenarioId: "desk_sol_composite_1",
+          runKind: "backtest",
+          requestedBy: "operator_1",
+        },
+        {
+          createId(prefix) {
+            return prefix;
+          },
+          now() {
+            return "2026-03-17T05:00:00Z";
+          },
+          async runRuntimeBacktest({ payload }) {
+            const request = payload as {
+              reportId: string;
+              experimentId: string;
+            };
+            return {
+              status: 201,
+              ok: true,
+              payload: {
+                ok: true,
+                source: "stub",
+                created: true,
+                report: buildBacktestReport({
+                  reportId: request.reportId,
+                  experimentId: request.experimentId,
+                  venueKey: "jupiter",
+                  netReturnBps: "12.0000",
+                  grossReturnBps: "18.0000",
+                  totalCostBps: "6.0000",
+                  tradeCount: 2,
+                  maxDrawdownBps: "5.0000",
+                  excessVsFlatCashBps: "12.0000",
+                  windowMode: "anchored",
+                }),
+              },
+            };
+          },
+        },
+      );
+
+      expect(result.report.status).toBe("requires_human_approval");
+      expect(result.report.studyMatrix?.cells).toHaveLength(1);
+      expect(result.report.studyMatrix?.cells[0]?.status).toBe("completed");
+      expect(
+        result.report.studyMatrix?.cells[0]?.legResults[0]?.metrics.netReturnBps,
+      ).toBe("12.0000");
     } finally {
       sqlite.close();
     }

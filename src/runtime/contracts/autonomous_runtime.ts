@@ -19,6 +19,32 @@ const NUMERIC_STRING_SCHEMA = z
   .regex(/^-?\d+(?:\.\d+)?$/, "invalid-numeric-string");
 const BPS_SCHEMA = z.number().int().min(0).max(10_000);
 
+function addDuplicateIdIssues<
+  TEntry extends Record<string, unknown>,
+  TKey extends keyof TEntry & string,
+>(
+  ctx: z.RefinementCtx,
+  entries: TEntry[],
+  collectionKey: string,
+  idKey: TKey,
+) {
+  const seen = new Map<string, number>();
+  for (const [index, entry] of entries.entries()) {
+    const value = entry[idKey];
+    if (typeof value !== "string" || value.length === 0) continue;
+    const firstIndex = seen.get(value);
+    if (typeof firstIndex === "number") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `duplicate-${collectionKey}-${idKey}:${value}`,
+        path: [collectionKey, index, idKey],
+      });
+      continue;
+    }
+    seen.set(value, index);
+  }
+}
+
 const VersionedSchema = z
   .object({
     schemaVersion: z.literal(RUNTIME_PROTOCOL_SCHEMA_VERSION),
@@ -298,7 +324,11 @@ export const RuntimeBacktestStatusSchema = z.enum([
   "failed",
 ]);
 
-export const RuntimeBacktestWindowModeSchema = z.enum(["rolling", "expanding"]);
+export const RuntimeBacktestWindowModeSchema = z.enum([
+  "rolling",
+  "expanding",
+  "anchored",
+]);
 
 export const RuntimeBacktestBaselineSchema = z.enum([
   "flat_cash",
@@ -1653,6 +1683,11 @@ const RuntimeStrategyDeskResearchMatrixSchema = z
       .max(16),
     windows: z.array(RuntimeStrategyDeskStudyWindowSchema).min(1).max(16),
     variants: z.array(RuntimeStrategyDeskStudyVariantSchema).min(1).max(16),
+  })
+  .superRefine((value, ctx) => {
+    addDuplicateIdIssues(ctx, value.backtestLegs, "backtestLegs", "legId");
+    addDuplicateIdIssues(ctx, value.windows, "windows", "windowId");
+    addDuplicateIdIssues(ctx, value.variants, "variants", "variantId");
   })
   .strict();
 

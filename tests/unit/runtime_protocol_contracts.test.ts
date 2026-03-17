@@ -1724,6 +1724,202 @@ describe("runtime protocol contracts", () => {
     ).toEqual([]);
   });
 
+  test("accepts anchored runtime backtest reports", () => {
+    const report = parseRuntimeBacktestReport({
+      schemaVersion: "v1",
+      reportId: "backtest_anchored_report",
+      experimentId: "experiment_anchored",
+      strategyKey: "strategy_desk::sol_composite",
+      status: "completed",
+      generatedAt: "2026-03-17T05:00:00.000Z",
+      venueKeys: ["jupiter"],
+      assetKeys: ["SOL", "USDC"],
+      codeRevision: {
+        vcs: "git",
+        repository: "github.com/GuiBibeau/serious-trader-ralph",
+        revision: "356b539e3ec730663c4025b8f00cd6b47b823d1a",
+        treeDirty: false,
+      },
+      datasetSnapshots: [
+        {
+          datasetId: "dataset_feature_cache_sol_usdc_market_events",
+          snapshotId: "snapshot_2026_03_17_backtest",
+          capturedAt: "2026-03-17T05:00:00.000Z",
+        },
+      ],
+      strategySpecDigest: "sha256:anchored-report",
+      config: {
+        replayCorpusId: "replay_corpus_sol_usdc_feature_cache",
+        venueKey: "jupiter",
+        pairSymbol: "SOL/USDC",
+        marketType: "spot",
+        windowMode: "anchored",
+        trainingWindowObservations: 8,
+        testingWindowObservations: 4,
+        stepObservations: 4,
+        purgeObservations: 1,
+        baselineStrategies: ["flat_cash", "buy_and_hold"],
+      },
+      foldReports: [
+        {
+          foldId: "fold_0",
+          foldIndex: 0,
+          trainingStartAt: "2026-03-10T00:00:00Z",
+          trainingEndAt: "2026-03-16T23:55:00Z",
+          testStartAt: "2026-03-16T23:55:00Z",
+          testEndAt: "2026-03-17T05:00:00Z",
+          trainObservationCount: 8,
+          purgedObservationCount: 1,
+          testObservationCount: 4,
+          metrics: {
+            observationCount: 4,
+            tradeCount: 2,
+            grossReturnBps: "18.0000",
+            netReturnBps: "12.0000",
+            totalCostBps: "6.0000",
+            winRateBps: 5000,
+            maxDrawdownBps: "5.0000",
+          },
+          baselineComparisons: [
+            {
+              baseline: "flat_cash",
+              baselineReturnBps: "0.0000",
+              excessReturnBps: "12.0000",
+            },
+          ],
+          regimeMetrics: [],
+        },
+      ],
+      aggregateMetrics: {
+        observationCount: 4,
+        tradeCount: 2,
+        grossReturnBps: "18.0000",
+        netReturnBps: "12.0000",
+        totalCostBps: "6.0000",
+        winRateBps: 5000,
+        maxDrawdownBps: "5.0000",
+      },
+      aggregateBaselineComparisons: [
+        {
+          baseline: "flat_cash",
+          baselineReturnBps: "0.0000",
+          excessReturnBps: "12.0000",
+        },
+      ],
+      aggregateRegimeMetrics: [],
+      promotionEligible: true,
+      blockingReasons: [],
+      summary: "Anchored study report.",
+      tags: ["anchored"],
+    });
+
+    expect(report.config.windowMode).toBe("anchored");
+  });
+
+  test("rejects duplicate strategy desk research matrix ids", () => {
+    expect(() =>
+      parseRuntimeStrategyDeskScenarioManifest({
+        schemaVersion: "v1",
+        scenarioId: "desk_sol_composite_duplicates",
+        title: "Duplicate matrix ids",
+        summary: "Ensure malformed study matrices fail closed.",
+        ownerUserId: "user_1",
+        strategyKey: "strategy_desk::sol_composite",
+        thesis: "Duplicate ids should never be accepted.",
+        state: "replay_ready",
+        createdAt: "2026-03-17T03:00:00Z",
+        updatedAt: "2026-03-17T03:05:00Z",
+        researchMatrix: {
+          selectionMetric: "excess_vs_flat_cash_bps",
+          backtestLegs: [
+            {
+              legId: "leg_spot_alpha",
+              experimentId: "exp_sol_spot",
+              replayCorpusId: "replay_sol_usdc",
+              venueKey: "jupiter",
+              pairSymbol: "SOL/USDC",
+              marketType: "spot",
+              windowMode: "rolling",
+              trainingWindowObservations: 8,
+              testingWindowObservations: 4,
+              stepObservations: 4,
+              purgeObservations: 1,
+              baselineStrategies: ["flat_cash", "buy_and_hold"],
+            },
+            {
+              legId: "leg_spot_alpha",
+              experimentId: "exp_sol_spot_alt",
+              replayCorpusId: "replay_sol_usdc",
+              venueKey: "jupiter",
+              pairSymbol: "SOL/USDC",
+              marketType: "spot",
+              windowMode: "rolling",
+              trainingWindowObservations: 8,
+              testingWindowObservations: 4,
+              stepObservations: 4,
+              purgeObservations: 1,
+              baselineStrategies: ["flat_cash", "buy_and_hold"],
+            },
+          ],
+          windows: [
+            {
+              windowId: "selection_week_1",
+              label: "Selection week 1",
+              cohort: "selection",
+              windowMode: "rolling",
+              trainingWindowObservations: 8,
+              testingWindowObservations: 4,
+              stepObservations: 4,
+              purgeObservations: 1,
+            },
+          ],
+          variants: [
+            {
+              variantId: "fast",
+              label: "Fast",
+              parameterManifest: {
+                threshold: "fast",
+              },
+            },
+            {
+              variantId: "fast",
+              label: "Fast duplicate",
+              parameterManifest: {
+                threshold: "slow",
+              },
+            },
+          ],
+        },
+        legs: [
+          {
+            legId: "leg_spot_alpha",
+            label: "Spot alpha",
+            role: "primary_alpha",
+            venueKey: "jupiter",
+            intentFamily: "spot_swap",
+            marketType: "spot",
+            pair: {
+              symbol: "SOL/USDC",
+              baseMint: SOL_MINT,
+              quoteMint: USDC_MINT,
+            },
+            assetKeys: ["SOL", "USDC"],
+            enabledModes: ["shadow", "paper"],
+            sizing: {
+              targetNotionalUsd: "1000",
+              maxNotionalUsd: "2500",
+              reserveUsd: "1000",
+              maxSlippageBps: 50,
+            },
+          },
+        ],
+        evidence: [],
+        implementationReferences: [],
+        tags: ["strategy-desk"],
+      }),
+    ).toThrow("duplicate-backtestLegs-legId:leg_spot_alpha");
+  });
+
   test("generates deterministic JSON schema documents", () => {
     for (const entry of Object.values(RUNTIME_PROTOCOL_SCHEMA_REGISTRY)) {
       const schemaA = z.toJSONSchema(entry.schema);
