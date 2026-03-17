@@ -257,11 +257,22 @@ export async function upsertRuntimeStrategyDeskScenarioReportWorkflow(input: {
     input.env.WAITLIST_DB,
     input.report,
   );
-  await updateStrategyDeskScenarioLatestReport(input.env.WAITLIST_DB, {
-    scenarioId: report.scenarioId,
-    latestReportId: report.reportId,
-    updatedAt: report.generatedAt,
-  });
+  const currentLatestReport = scenario.latestReportId
+    ? await getStrategyDeskScenarioReport(
+        input.env.WAITLIST_DB,
+        scenario.latestReportId,
+      )
+    : null;
+  if (
+    !currentLatestReport ||
+    currentLatestReport.generatedAt <= report.generatedAt
+  ) {
+    await updateStrategyDeskScenarioLatestReport(input.env.WAITLIST_DB, {
+      scenarioId: report.scenarioId,
+      latestReportId: report.reportId,
+      updatedAt: report.generatedAt,
+    });
+  }
   return { report };
 }
 

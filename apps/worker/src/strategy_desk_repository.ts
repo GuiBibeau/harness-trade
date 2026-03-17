@@ -466,27 +466,13 @@ export async function listStrategyDeskScenarioManifests(
         AND (?3 IS NULL OR strategy_key = ?3)
         AND (?4 IS NULL OR state = ?4)
         AND (
-          ?5 IS NULL OR EXISTS (
+          (?5 IS NULL AND ?6 IS NULL AND ?7 IS NULL) OR EXISTS (
             SELECT 1
             FROM strategy_desk_scenario_legs
             WHERE scenario_id = strategy_desk_scenarios.scenario_id
-              AND venue_key = ?5
-          )
-        )
-        AND (
-          ?6 IS NULL OR EXISTS (
-            SELECT 1
-            FROM strategy_desk_scenario_legs
-            WHERE scenario_id = strategy_desk_scenarios.scenario_id
-              AND intent_family = ?6
-          )
-        )
-        AND (
-          ?7 IS NULL OR EXISTS (
-            SELECT 1
-            FROM strategy_desk_scenario_legs
-            WHERE scenario_id = strategy_desk_scenarios.scenario_id
-              AND market_type = ?7
+              AND (?5 IS NULL OR venue_key = ?5)
+              AND (?6 IS NULL OR intent_family = ?6)
+              AND (?7 IS NULL OR market_type = ?7)
           )
         )
       ORDER BY updated_at DESC, scenario_id DESC

@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Env } from "../../apps/worker/src/types";
@@ -7,6 +7,13 @@ import {
   createExecutionContextStub,
   createWorkerLiveEnv,
 } from "../integration/_worker_live_test_utils";
+
+mock.module("../../apps/worker/src/auth", () => ({
+  requireUser: mock(async () => ({
+    privyUserId: "did:privy:user_1",
+    email: "user@example.com",
+  })),
+}));
 
 const worker = (await import("../../apps/worker/src/index")).default;
 
@@ -184,6 +191,26 @@ describe("worker runtime strategy desk routes", () => {
         marketType: "spot",
       });
       expect(listPayload.scenarios[0]?.scenarioId).toBe("desk_sol_composite_1");
+
+      const mismatchedTupleResponse = await worker.fetch(
+        new Request(
+          "http://localhost/api/admin/ops/runtime/strategy-desk/scenarios?venueKey=jupiter&intentFamily=prediction_order&marketType=prediction",
+          {
+            headers: {
+              authorization: "Bearer admin-secret",
+            },
+          },
+        ),
+        env,
+        createExecutionContextStub(),
+      );
+      expect(mismatchedTupleResponse.status).toBe(200);
+      const mismatchedTuplePayload = (await mismatchedTupleResponse.json()) as {
+        ok: boolean;
+        scenarios: Array<{ scenarioId: string }>;
+      };
+      expect(mismatchedTuplePayload.ok).toBe(true);
+      expect(mismatchedTuplePayload.scenarios).toEqual([]);
 
       const detailResponse = await worker.fetch(
         new Request(
@@ -410,6 +437,74 @@ describe("worker runtime strategy desk routes", () => {
       expect(detailPayload.ok).toBe(true);
       expect(detailPayload.scenario.latestReportId).toBe(
         "desk_report_sol_composite_paper_1",
+      );
+
+      const newerReport = {
+        ...report,
+        reportId: "desk_report_sol_composite_paper_2",
+        generatedAt: "2026-03-17T03:09:00Z",
+        summary: "Newer paper composite report.",
+      };
+      const newerReportResponse = await worker.fetch(
+        new Request(
+          "http://localhost/api/admin/ops/runtime/strategy-desk/reports",
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer admin-secret",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(newerReport),
+          },
+        ),
+        env,
+        createExecutionContextStub(),
+      );
+      expect(newerReportResponse.status).toBe(200);
+
+      const olderBackfillReport = {
+        ...report,
+        reportId: "desk_report_sol_composite_paper_backfill",
+        generatedAt: "2026-03-17T03:08:30Z",
+        summary: "Older backfill paper composite report.",
+      };
+      const olderBackfillResponse = await worker.fetch(
+        new Request(
+          "http://localhost/api/admin/ops/runtime/strategy-desk/reports",
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer admin-secret",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(olderBackfillReport),
+          },
+        ),
+        env,
+        createExecutionContextStub(),
+      );
+      expect(olderBackfillResponse.status).toBe(200);
+
+      const latestDetailResponse = await worker.fetch(
+        new Request(
+          "http://localhost/api/admin/ops/runtime/strategy-desk/scenarios/desk_sol_composite_1",
+          {
+            headers: {
+              authorization: "Bearer admin-secret",
+            },
+          },
+        ),
+        env,
+        createExecutionContextStub(),
+      );
+      expect(latestDetailResponse.status).toBe(200);
+      const latestDetailPayload = (await latestDetailResponse.json()) as {
+        ok: boolean;
+        scenario: { latestReportId?: string };
+      };
+      expect(latestDetailPayload.ok).toBe(true);
+      expect(latestDetailPayload.scenario.latestReportId).toBe(
+        "desk_report_sol_composite_paper_2",
       );
 
       const scenarioCount = sqlite
