@@ -22,12 +22,7 @@ const BPS_SCHEMA = z.number().int().min(0).max(10_000);
 function addDuplicateIdIssues<
   TEntry extends Record<string, unknown>,
   TKey extends keyof TEntry & string,
->(
-  ctx: z.RefinementCtx,
-  entries: TEntry[],
-  collectionKey: string,
-  idKey: TKey,
-) {
+>(ctx: z.RefinementCtx, entries: TEntry[], collectionKey: string, idKey: TKey) {
   const seen = new Map<string, number>();
   for (const [index, entry] of entries.entries()) {
     const value = entry[idKey];

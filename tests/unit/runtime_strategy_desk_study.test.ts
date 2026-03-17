@@ -683,7 +683,8 @@ describe("runtime strategy desk study workflow", () => {
       expect(result.report.studyMatrix?.cells).toHaveLength(1);
       expect(result.report.studyMatrix?.cells[0]?.status).toBe("completed");
       expect(
-        result.report.studyMatrix?.cells[0]?.legResults[0]?.metrics.netReturnBps,
+        result.report.studyMatrix?.cells[0]?.legResults[0]?.metrics
+          .netReturnBps,
       ).toBe("12.0000");
     } finally {
       sqlite.close();
