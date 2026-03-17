@@ -712,6 +712,7 @@ async function applyControlToMaterializedObjects(input: {
 function buildStrategyLabPromotionArtifacts(input: {
   scenario: RuntimeStrategyDeskScenarioManifest;
   handoff: RuntimeStrategyDeskPromotionHandoff;
+  actor: string;
   now: string;
 }) {
   const deploymentId =
@@ -728,7 +729,7 @@ function buildStrategyLabPromotionArtifacts(input: {
     transitionType: "promote",
     status: "applied",
     summary: input.handoff.summary,
-    requestedBy: input.handoff.requestedBy,
+    requestedBy: input.actor,
     createdAt: input.handoff.createdAt,
     updatedAt: input.now,
     appliedAt: input.now,
@@ -750,6 +751,7 @@ function buildStrategyLabPromotionArtifacts(input: {
       source: "strategy_desk_handoff",
       scenarioId: input.scenario.scenarioId,
       handoffId: input.handoff.handoffId,
+      handoffRequestedBy: input.handoff.requestedBy,
     },
   });
   const event = parseRuntimeStrategyLabPromotionEvent({
@@ -757,7 +759,7 @@ function buildStrategyLabPromotionArtifacts(input: {
     eventId: createDeskId("promoevt"),
     promotionId,
     eventType: "applied",
-    actor: input.handoff.requestedBy,
+    actor: input.actor,
     fromState: "paper",
     toState: "limited_live",
     summary: "Strategy desk bounded execution handoff applied.",
@@ -1030,6 +1032,11 @@ export async function transitionRuntimeStrategyDeskPromotionHandoffWorkflow(
       break;
     }
     case "apply": {
+      if (handoff.status === "applied") {
+        throw new Error(
+          `runtime-strategy-desk-handoff-already-applied:${handoff.handoffId}`,
+        );
+      }
       if (handoff.approvals.length === 0 && nextApprovals.length === 0) {
         throw new Error(
           "runtime-strategy-desk-handoff-human-approval-required",
@@ -1067,6 +1074,7 @@ export async function transitionRuntimeStrategyDeskPromotionHandoffWorkflow(
           status: "applied",
           appliedAt: now,
         },
+        actor: input.actor,
         now,
       });
       await writeStrategyLabPromotion(input.env.WAITLIST_DB, promotion);
