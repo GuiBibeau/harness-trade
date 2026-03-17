@@ -8,77 +8,79 @@ import {
   createWorkerLiveEnv,
 } from "../integration/_worker_live_test_utils";
 
-const executeRuntimeStrategyDeskScenarioWorkflowMock = mock(async (input: {
-  scenarioId: string;
-  runKind: "shadow" | "paper";
-  requestedBy: string;
-  walletAddress: string;
-}) => ({
-  scenario: {
-    schemaVersion: "v1",
-    scenarioId: input.scenarioId,
-    title: "Mock desk scenario",
-    summary: "Mock scenario summary",
-    ownerUserId: "user_1",
-    strategyKey: "strategy_desk::mock",
-    thesis: "Mock thesis",
-    state: "paper_ready",
-    createdAt: "2026-03-17T03:00:00Z",
-    updatedAt: "2026-03-17T03:05:00Z",
-    legs: [],
-    evidence: [],
-    implementationReferences: [],
-    tags: [],
-  },
-  run: {
-    schemaVersion: "v1",
-    scenarioRunId: "desk_run_mock_1",
-    scenarioId: input.scenarioId,
-    scenarioState: "paper_ready",
-    runKind: input.runKind,
-    state: "completed",
-    requestedBy: input.requestedBy,
-    trigger: {
-      kind: "operator",
-      source: "strategy_desk_runner",
-      observedAt: "2026-03-17T03:06:00Z",
+const executeRuntimeStrategyDeskScenarioWorkflowMock = mock(
+  async (input: {
+    scenarioId: string;
+    runKind: "shadow" | "paper";
+    requestedBy: string;
+    walletAddress: string;
+  }) => ({
+    scenario: {
+      schemaVersion: "v1",
+      scenarioId: input.scenarioId,
+      title: "Mock desk scenario",
+      summary: "Mock scenario summary",
+      ownerUserId: "user_1",
+      strategyKey: "strategy_desk::mock",
+      thesis: "Mock thesis",
+      state: "paper_ready",
+      createdAt: "2026-03-17T03:00:00Z",
+      updatedAt: "2026-03-17T03:05:00Z",
+      legs: [],
+      evidence: [],
+      implementationReferences: [],
+      tags: [],
     },
-    createdAt: "2026-03-17T03:06:00Z",
-    updatedAt: "2026-03-17T03:06:01Z",
-    legRuns: [],
-  },
-  report: {
-    schemaVersion: "v1",
-    reportId: "desk_report_mock_1",
-    scenarioId: input.scenarioId,
-    scenarioRunId: "desk_run_mock_1",
-    stage: input.runKind,
-    status: "pass",
-    summary: "Mock report",
-    generatedAt: "2026-03-17T03:06:02Z",
-    legOutcomes: [
-      {
-        legId: "leg_1",
-        status: "pass",
-        evidenceRefs: [
-          {
-            kind: "strategy_desk_leg_receipt",
-            ref: "desk_run_mock_1:leg_1",
-          },
-        ],
+    run: {
+      schemaVersion: "v1",
+      scenarioRunId: "desk_run_mock_1",
+      scenarioId: input.scenarioId,
+      scenarioState: "paper_ready",
+      runKind: input.runKind,
+      state: "completed",
+      requestedBy: input.requestedBy,
+      trigger: {
+        kind: "operator",
+        source: "strategy_desk_runner",
+        observedAt: "2026-03-17T03:06:00Z",
       },
-    ],
-    evidence: [],
-    checks: [
-      {
-        checkId: "mock",
-        status: "pass",
-        message: "mock",
-      },
-    ],
-    approvals: [],
-  },
-}));
+      createdAt: "2026-03-17T03:06:00Z",
+      updatedAt: "2026-03-17T03:06:01Z",
+      legRuns: [],
+    },
+    report: {
+      schemaVersion: "v1",
+      reportId: "desk_report_mock_1",
+      scenarioId: input.scenarioId,
+      scenarioRunId: "desk_run_mock_1",
+      stage: input.runKind,
+      status: "pass",
+      summary: "Mock report",
+      generatedAt: "2026-03-17T03:06:02Z",
+      legOutcomes: [
+        {
+          legId: "leg_1",
+          status: "pass",
+          evidenceRefs: [
+            {
+              kind: "strategy_desk_leg_receipt",
+              ref: "desk_run_mock_1:leg_1",
+            },
+          ],
+        },
+      ],
+      evidence: [],
+      checks: [
+        {
+          checkId: "mock",
+          status: "pass",
+          message: "mock",
+        },
+      ],
+      approvals: [],
+    },
+  }),
+);
 
 mock.module("../../apps/worker/src/runtime_strategy_desk_runner", () => ({
   executeRuntimeStrategyDeskScenarioWorkflow:
@@ -229,7 +231,9 @@ describe("worker runtime strategy desk execute route", () => {
       expect(payload.ok).toBe(true);
       expect(payload.run.scenarioRunId).toBe("desk_run_mock_1");
       expect(payload.report.reportId).toBe("desk_report_mock_1");
-      expect(executeRuntimeStrategyDeskScenarioWorkflowMock).toHaveBeenCalledWith(
+      expect(
+        executeRuntimeStrategyDeskScenarioWorkflowMock,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           scenarioId: "desk_sol_composite_1",
           runKind: "paper",

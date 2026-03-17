@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
-  executeRuntimeStrategyDeskScenarioWorkflow,
-} from "../../apps/worker/src/runtime_strategy_desk_runner";
-import { getRuntimeStrategyDeskScenarioWorkflow, upsertRuntimeStrategyDeskScenarioWorkflow } from "../../apps/worker/src/runtime_strategy_desk";
+  getRuntimeStrategyDeskScenarioWorkflow,
+  upsertRuntimeStrategyDeskScenarioWorkflow,
+} from "../../apps/worker/src/runtime_strategy_desk";
+import { executeRuntimeStrategyDeskScenarioWorkflow } from "../../apps/worker/src/runtime_strategy_desk_runner";
 import type { Env } from "../../apps/worker/src/types";
 import { createWorkerLiveEnv } from "../integration/_worker_live_test_utils";
 
@@ -97,60 +98,64 @@ function readFixture(fileName: string): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
-const quoteSpotSwapMock = mock(async (input: {
-  venueKey?: string;
-  inputMint: string;
-  outputMint: string;
-  amountAtomic: string;
-}) => ({
-  venueKey: input.venueKey ?? "jupiter",
-  quoteProvider: "mock-quote",
-  quoteResponse: {
-    inputMint: input.inputMint,
-    outputMint: input.outputMint,
-    inAmount: input.amountAtomic,
-    outAmount: "7000000000",
-    priceImpactPct: 0.001,
-    routePlan: [{ poolId: "pool_1", swapInfo: { label: "MockRoute" } }],
-  },
-  routeQuality: {
+const quoteSpotSwapMock = mock(
+  async (input: {
+    venueKey?: string;
+    inputMint: string;
+    outputMint: string;
+    amountAtomic: string;
+  }) => ({
     venueKey: input.venueKey ?? "jupiter",
     quoteProvider: "mock-quote",
-    routeHopCount: 1,
-    routeLabels: ["MockRoute"],
-    poolIds: ["pool_1"],
-    quotedOutAmountAtomic: "7000000000",
-    minExpectedOutAmountAtomic: "6900000000",
-    priceImpactPct: 0.001,
-  },
-}));
-
-const executeIntentViaRouterMock = mock(async (input: {
-  intent: { family: string; venueKey?: string };
-  execution?: { adapter?: string };
-}) => ({
-  status: "simulated" as const,
-  signature: null,
-  usedQuote: {
-    inputMint: "mint_in",
-    outputMint: "mint_out",
-    inAmount: "100",
-    outAmount: "101",
-    priceImpactPct: 0,
-    routePlan: [],
-  },
-  refreshed: false,
-  lastValidBlockHeight: null,
-  executionMeta: {
-    route: input.execution?.adapter ?? input.intent.venueKey ?? "mock",
-    classification: "simulated" as const,
-    lifecycle: {
-      fillState: "pending" as const,
-      settlementState: "pending" as const,
-      notes: [`family:${input.intent.family}`],
+    quoteResponse: {
+      inputMint: input.inputMint,
+      outputMint: input.outputMint,
+      inAmount: input.amountAtomic,
+      outAmount: "7000000000",
+      priceImpactPct: 0.001,
+      routePlan: [{ poolId: "pool_1", swapInfo: { label: "MockRoute" } }],
     },
-  },
-}));
+    routeQuality: {
+      venueKey: input.venueKey ?? "jupiter",
+      quoteProvider: "mock-quote",
+      routeHopCount: 1,
+      routeLabels: ["MockRoute"],
+      poolIds: ["pool_1"],
+      quotedOutAmountAtomic: "7000000000",
+      minExpectedOutAmountAtomic: "6900000000",
+      priceImpactPct: 0.001,
+    },
+  }),
+);
+
+const executeIntentViaRouterMock = mock(
+  async (input: {
+    intent: { family: string; venueKey?: string };
+    execution?: { adapter?: string };
+  }) => ({
+    status: "simulated" as const,
+    signature: null,
+    usedQuote: {
+      inputMint: "mint_in",
+      outputMint: "mint_out",
+      inAmount: "100",
+      outAmount: "101",
+      priceImpactPct: 0,
+      routePlan: [],
+    },
+    refreshed: false,
+    lastValidBlockHeight: null,
+    executionMeta: {
+      route: input.execution?.adapter ?? input.intent.venueKey ?? "mock",
+      classification: "simulated" as const,
+      lifecycle: {
+        fillState: "pending" as const,
+        settlementState: "pending" as const,
+        notes: [`family:${input.intent.family}`],
+      },
+    },
+  }),
+);
 
 describe("runtime strategy desk runner", () => {
   beforeEach(() => {
@@ -251,8 +256,12 @@ describe("runtime strategy desk runner", () => {
       ]);
       expect(result.run.state).toBe("completed");
       expect(result.report.status).toBe("pass");
-      expect(result.run.legRuns.every((legRun) => legRun.state === "completed")).toBe(true);
-      expect(result.report.legOutcomes.every((outcome) => outcome.status === "pass")).toBe(true);
+      expect(
+        result.run.legRuns.every((legRun) => legRun.state === "completed"),
+      ).toBe(true);
+      expect(
+        result.report.legOutcomes.every((outcome) => outcome.status === "pass"),
+      ).toBe(true);
 
       const storedScenario = await getRuntimeStrategyDeskScenarioWorkflow({
         env,
@@ -263,7 +272,9 @@ describe("runtime strategy desk runner", () => {
       );
       expect(
         (
-          result.run.metadata as { artifacts?: Record<string, unknown> } | undefined
+          result.run.metadata as
+            | { artifacts?: Record<string, unknown> }
+            | undefined
         )?.artifacts,
       ).toBeDefined();
       expect(quoteSpotSwapMock).toHaveBeenCalledTimes(1);
@@ -365,9 +376,11 @@ describe("runtime strategy desk runner", () => {
         (legRun) => legRun.legId === "leg_flash_rebalance",
       );
       expect(flashLeg?.state).toBe("skipped");
-      const artifacts = (result.run.metadata as {
-        artifacts?: Record<string, { attemptCount: number; status: string }>;
-      }).artifacts;
+      const artifacts = (
+        result.run.metadata as {
+          artifacts?: Record<string, { attemptCount: number; status: string }>;
+        }
+      ).artifacts;
       expect(artifacts?.leg_prediction_overlay?.attemptCount).toBe(2);
       expect(artifacts?.leg_flash_rebalance?.status).toBe("skipped");
     } finally {

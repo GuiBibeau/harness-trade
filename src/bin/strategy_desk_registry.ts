@@ -85,10 +85,10 @@ function buildExecuteBody(payload: unknown): unknown {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("strategy-desk-execute-invalid-body");
   }
-  const {
-    scenarioId: _scenarioId,
-    ...rest
-  } = payload as Record<string, unknown>;
+  const { scenarioId: _scenarioId, ...rest } = payload as Record<
+    string,
+    unknown
+  >;
   return rest;
 }
 

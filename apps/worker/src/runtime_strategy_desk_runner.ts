@@ -4,27 +4,22 @@ import {
   runtimeVenueSupportsIntentFamily,
   runtimeVenueSupportsMode,
 } from "../../../src/runtime/venues/catalog.js";
-import type {
-  RuntimeMode,
-  RuntimeStrategyDeskRunKind,
-  RuntimeStrategyDeskScenarioLeg,
-  RuntimeStrategyDeskScenarioManifest,
-  RuntimeStrategyDeskScenarioReport,
-  RuntimeStrategyDeskScenarioRun,
-} from "./runtime_contracts";
-import { DFlowClient } from "./dflow";
-import { DriftClient } from "./drift";
 import {
   SUPPORTED_TRADING_MINTS,
   TRADING_TOKEN_BY_MINT,
   USDC_MINT,
 } from "./defaults";
+import { DFlowClient } from "./dflow";
+import { DriftClient } from "./drift";
 import {
-  executeIntentViaRouter,
   type ExecutionAdapterRegistration,
+  executeIntentViaRouter,
   resolveExecutionAdapterRegistration,
 } from "./execution/router";
-import { quoteSpotSwap, resolveSpotVenueExecutionAdapter } from "./execution/spot_venues";
+import {
+  quoteSpotSwap,
+  resolveSpotVenueExecutionAdapter,
+} from "./execution/spot_venues";
 import type {
   ExecuteSwapResult,
   ExecutionRouterIntent,
@@ -35,17 +30,28 @@ import { JupiterClient } from "./jupiter";
 import { MangoClient } from "./mango";
 import { OpenBookClient } from "./openbook";
 import { OrcaClient } from "./orca";
-import { normalizePolicy, enforcePolicy } from "./policy";
+import { enforcePolicy, normalizePolicy } from "./policy";
 import { RaydiumClient } from "./raydium";
-import { SolanaRpc } from "./solana_rpc";
+import type {
+  RuntimeMode,
+  RuntimeStrategyDeskRunKind,
+  RuntimeStrategyDeskScenarioLeg,
+  RuntimeStrategyDeskScenarioManifest,
+  RuntimeStrategyDeskScenarioReport,
+  RuntimeStrategyDeskScenarioRun,
+} from "./runtime_contracts";
 import {
   getRuntimeStrategyDeskScenarioWorkflow,
   upsertRuntimeStrategyDeskScenarioReportWorkflow,
   upsertRuntimeStrategyDeskScenarioRunWorkflow,
 } from "./runtime_strategy_desk";
+import { SolanaRpc } from "./solana_rpc";
 import type { Env } from "./types";
 
-type StrategyDeskExecuteRunKind = Extract<RuntimeStrategyDeskRunKind, "shadow" | "paper">;
+type StrategyDeskExecuteRunKind = Extract<
+  RuntimeStrategyDeskRunKind,
+  "shadow" | "paper"
+>;
 
 export type RuntimeStrategyDeskExecuteWorkflowInput = {
   env: Env;
@@ -122,7 +128,12 @@ type StrategyDeskRunArtifact = {
 
 const STABLE_MINTS = new Set(
   ["USDC", "USDT", "PYUSD", "USD1", "USDG"]
-    .map((symbol) => Object.values(TRADING_TOKEN_BY_MINT).find((token) => token.symbol === symbol)?.mint)
+    .map(
+      (symbol) =>
+        Object.values(TRADING_TOKEN_BY_MINT).find(
+          (token) => token.symbol === symbol,
+        )?.mint,
+    )
     .filter((value): value is string => Boolean(value)),
 );
 
@@ -130,7 +141,10 @@ function nowIso(deps?: StrategyDeskExecutionDeps): string {
   return deps?.now ? deps.now() : new Date().toISOString();
 }
 
-function createDeskId(prefix: string, deps?: StrategyDeskExecutionDeps): string {
+function createDeskId(
+  prefix: string,
+  deps?: StrategyDeskExecutionDeps,
+): string {
   if (deps?.createId) return deps.createId(prefix);
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
 }
@@ -154,9 +168,7 @@ function stableMintDecimals(mint: string): number | null {
 function usdToStableAtomic(usd: string, mint: string): string {
   const decimals = stableMintDecimals(mint);
   if (decimals === null) {
-    throw new Error(
-      `runtime-strategy-desk-stable-mint-required:${mint}`,
-    );
+    throw new Error(`runtime-strategy-desk-stable-mint-required:${mint}`);
   }
   return decimalToAtomic(usd, decimals);
 }
@@ -238,7 +250,9 @@ function topologicalScenarioLegs(
   const byId = new Map(scenario.legs.map((leg) => [leg.legId, leg]));
   const incoming = new Map<string, number>();
   const dependents = new Map<string, string[]>();
-  const originalOrder = new Map(scenario.legs.map((leg, index) => [leg.legId, index]));
+  const originalOrder = new Map(
+    scenario.legs.map((leg, index) => [leg.legId, index]),
+  );
 
   for (const leg of scenario.legs) {
     incoming.set(leg.legId, 0);
@@ -259,7 +273,11 @@ function topologicalScenarioLegs(
 
   const ready = scenario.legs
     .filter((leg) => (incoming.get(leg.legId) ?? 0) === 0)
-    .sort((left, right) => (originalOrder.get(left.legId) ?? 0) - (originalOrder.get(right.legId) ?? 0));
+    .sort(
+      (left, right) =>
+        (originalOrder.get(left.legId) ?? 0) -
+        (originalOrder.get(right.legId) ?? 0),
+    );
 
   const ordered: RuntimeStrategyDeskScenarioLeg[] = [];
   while (ready.length > 0) {
@@ -324,9 +342,7 @@ function buildRunnerContext(
   const rpcEndpoint =
     String(env.RPC_ENDPOINT ?? "").trim() ||
     "https://api.mainnet-beta.solana.com";
-  const rpc =
-    deps?.createRpc?.(env) ??
-    new SolanaRpc(rpcEndpoint);
+  const rpc = deps?.createRpc?.(env) ?? new SolanaRpc(rpcEndpoint);
   const jupiter =
     deps?.createJupiterClient?.(env) ??
     new JupiterClient(
@@ -344,8 +360,7 @@ function buildRunnerContext(
     );
   const mango = deps?.createMangoClient?.() ?? new MangoClient();
   const openbook =
-    deps?.createOpenBookClient?.(env) ??
-    new OpenBookClient(rpcEndpoint);
+    deps?.createOpenBookClient?.(env) ?? new OpenBookClient(rpcEndpoint);
   return {
     rpc,
     jupiter,
@@ -358,9 +373,7 @@ function buildRunnerContext(
   };
 }
 
-function defaultAdapterKey(
-  leg: RuntimeStrategyDeskScenarioLeg,
-): string {
+function defaultAdapterKey(leg: RuntimeStrategyDeskScenarioLeg): string {
   if (leg.intentFamily === "spot_swap") {
     return resolveSpotVenueExecutionAdapter({
       venueKey: leg.venueKey,
@@ -412,21 +425,21 @@ function buildLegPolicy(
   });
 }
 
-async function buildSpotLeg(
-  input: {
-    env: Env;
-    leg: RuntimeStrategyDeskScenarioLeg;
-    runKind: StrategyDeskExecuteRunKind;
-    walletAddress: string;
-    context: StrategyDeskRunnerContext;
-    deps?: StrategyDeskExecutionDeps;
-  },
-): Promise<ResolvedStrategyDeskLeg> {
+async function buildSpotLeg(input: {
+  env: Env;
+  leg: RuntimeStrategyDeskScenarioLeg;
+  runKind: StrategyDeskExecuteRunKind;
+  walletAddress: string;
+  context: StrategyDeskRunnerContext;
+  deps?: StrategyDeskExecutionDeps;
+}): Promise<ResolvedStrategyDeskLeg> {
   const { leg, context } = input;
   if (!leg.pair) {
     throw new Error(`runtime-strategy-desk-pair-required:${leg.legId}`);
   }
-  const side = String(leg.intent?.side ?? "buy").trim().toLowerCase();
+  const side = String(leg.intent?.side ?? "buy")
+    .trim()
+    .toLowerCase();
   if (side !== "buy" && side !== "sell") {
     throw new Error(`runtime-strategy-desk-spot-side-invalid:${leg.legId}`);
   }
@@ -484,9 +497,7 @@ function buildNonSpotIntent(
   if (leg.intentFamily === "prediction_order") {
     const instrumentId = String(leg.instrumentId ?? "").trim();
     if (!instrumentId) {
-      throw new Error(
-        `runtime-strategy-desk-instrument-required:${leg.legId}`,
-      );
+      throw new Error(`runtime-strategy-desk-instrument-required:${leg.legId}`);
     }
     const outcomeId = String(leg.intent?.outcomeId ?? "").trim();
     if (!outcomeId) {
@@ -514,11 +525,16 @@ function buildNonSpotIntent(
       side,
       quantityAtomic:
         leg.intent?.quantityAtomic ??
-        usdToStableAtomic(leg.sizing.targetNotionalUsd, leg.intent?.settlementMint ?? USDC_MINT),
+        usdToStableAtomic(
+          leg.sizing.targetNotionalUsd,
+          leg.intent?.settlementMint ?? USDC_MINT,
+        ),
       settlementMint: leg.intent?.settlementMint ?? USDC_MINT,
       params: {
         quantityMode: "quote",
-        marketNotionalCapUsd: Number(leg.sizing.maxNotionalUsd ?? leg.sizing.targetNotionalUsd),
+        marketNotionalCapUsd: Number(
+          leg.sizing.maxNotionalUsd ?? leg.sizing.targetNotionalUsd,
+        ),
         ...(leg.intent?.params ?? {}),
       },
     };
@@ -561,9 +577,7 @@ function buildNonSpotIntent(
   if (leg.intentFamily === "perp_order") {
     const instrumentId = String(leg.instrumentId ?? "").trim();
     if (!instrumentId) {
-      throw new Error(
-        `runtime-strategy-desk-instrument-required:${leg.legId}`,
-      );
+      throw new Error(`runtime-strategy-desk-instrument-required:${leg.legId}`);
     }
     if (
       side !== "long" &&
@@ -598,9 +612,7 @@ function buildNonSpotIntent(
   if (leg.intentFamily === "clob_order") {
     const instrumentId = String(leg.instrumentId ?? "").trim();
     if (!instrumentId) {
-      throw new Error(
-        `runtime-strategy-desk-instrument-required:${leg.legId}`,
-      );
+      throw new Error(`runtime-strategy-desk-instrument-required:${leg.legId}`);
     }
     if (side !== "buy" && side !== "sell") {
       throw new Error(`runtime-strategy-desk-clob-side-invalid:${leg.legId}`);
@@ -627,12 +639,10 @@ function buildNonSpotIntent(
   );
 }
 
-function buildNonSpotLeg(
-  input: {
-    leg: RuntimeStrategyDeskScenarioLeg;
-    walletAddress: string;
-  },
-): ResolvedStrategyDeskLeg {
+function buildNonSpotLeg(input: {
+  leg: RuntimeStrategyDeskScenarioLeg;
+  walletAddress: string;
+}): ResolvedStrategyDeskLeg {
   const intent = buildNonSpotIntent(input.leg);
   intent.wallet = input.walletAddress;
   const maxTradeAmountAtomic =
@@ -649,16 +659,14 @@ function buildNonSpotLeg(
   };
 }
 
-async function resolveStrategyDeskLeg(
-  input: {
-    env: Env;
-    leg: RuntimeStrategyDeskScenarioLeg;
-    runKind: StrategyDeskExecuteRunKind;
-    walletAddress: string;
-    context: StrategyDeskRunnerContext;
-    deps?: StrategyDeskExecutionDeps;
-  },
-): Promise<ResolvedStrategyDeskLeg> {
+async function resolveStrategyDeskLeg(input: {
+  env: Env;
+  leg: RuntimeStrategyDeskScenarioLeg;
+  runKind: StrategyDeskExecuteRunKind;
+  walletAddress: string;
+  context: StrategyDeskRunnerContext;
+  deps?: StrategyDeskExecutionDeps;
+}): Promise<ResolvedStrategyDeskLeg> {
   const mode = input.runKind as RuntimeMode;
   const capability = requireRuntimeVenueCapability(input.leg.venueKey);
   if (!runtimeVenueSupportsMode(capability, mode)) {
@@ -698,19 +706,31 @@ async function resolveStrategyDeskLeg(
   return { ...resolved, adapter };
 }
 
-async function executeResolvedLeg(
-  input: {
-    env: Env;
-    resolved: ResolvedStrategyDeskLeg;
-    runKind: StrategyDeskExecuteRunKind;
-    walletAddress: string;
-    privyWalletId?: string;
-    requestRef: string;
-    context: StrategyDeskRunnerContext;
-    deps?: StrategyDeskExecutionDeps;
-  },
-): Promise<ExecuteSwapResult> {
+async function executeResolvedLeg(input: {
+  env: Env;
+  resolved: ResolvedStrategyDeskLeg;
+  runKind: StrategyDeskExecuteRunKind;
+  walletAddress: string;
+  privyWalletId?: string;
+  requestRef: string;
+  context: StrategyDeskRunnerContext;
+  deps?: StrategyDeskExecutionDeps;
+}): Promise<ExecuteSwapResult> {
   const execute = input.deps?.executeIntentViaRouter ?? executeIntentViaRouter;
+  const spotExecutionInput =
+    input.resolved.intent.family === "spot_swap"
+      ? (() => {
+          if (!input.resolved.quoteResponse) {
+            throw new Error(
+              `runtime-strategy-desk-spot-quote-missing:${input.resolved.leg.legId}`,
+            );
+          }
+          return {
+            quoteResponse: input.resolved.quoteResponse,
+            userPublicKey: input.walletAddress,
+          };
+        })()
+      : null;
   return await execute({
     env: input.env,
     venueKey: input.resolved.leg.venueKey,
@@ -738,12 +758,7 @@ async function executeResolvedLeg(
     openbook: input.context.openbook,
     orca: input.context.orca,
     raydium: input.context.raydium,
-    ...(input.resolved.intent.family === "spot_swap"
-      ? {
-          quoteResponse: input.resolved.quoteResponse!,
-          userPublicKey: input.walletAddress,
-        }
-      : {}),
+    ...(spotExecutionInput ?? {}),
     privyWalletId: input.privyWalletId,
     intent: input.resolved.intent,
     log(level, message, meta) {
@@ -757,23 +772,25 @@ async function executeResolvedLeg(
   } as Parameters<typeof executeIntentViaRouter>[0]);
 }
 
-function buildLegRun(
-  input: {
-    run: RuntimeStrategyDeskScenarioRun;
-    legId: string;
-    stage: RuntimeStrategyDeskScenarioReport["stage"];
-    state: RuntimeStrategyDeskScenarioRun["legRuns"][number]["state"];
-    requestRef?: string;
-    notes?: string;
-  },
-): RuntimeStrategyDeskScenarioRun["legRuns"][number] {
-  const existing = input.run.legRuns.find((legRun) => legRun.legId === input.legId);
+function buildLegRun(input: {
+  run: RuntimeStrategyDeskScenarioRun;
+  legId: string;
+  stage: RuntimeStrategyDeskScenarioReport["stage"];
+  state: RuntimeStrategyDeskScenarioRun["legRuns"][number]["state"];
+  requestRef?: string;
+  notes?: string;
+}): RuntimeStrategyDeskScenarioRun["legRuns"][number] {
+  const existing = input.run.legRuns.find(
+    (legRun) => legRun.legId === input.legId,
+  );
   return {
     legId: input.legId,
     stage: input.stage,
     state: input.state,
     ...(input.requestRef ? { requestRef: input.requestRef } : {}),
-    ...(input.notes ?? existing?.notes ? { notes: input.notes ?? existing?.notes } : {}),
+    ...((input.notes ?? existing?.notes)
+      ? { notes: input.notes ?? existing?.notes }
+      : {}),
   };
 }
 
@@ -789,16 +806,14 @@ function replaceLegRun(
   };
 }
 
-function buildReport(
-  input: {
-    scenario: RuntimeStrategyDeskScenarioManifest;
-    run: RuntimeStrategyDeskScenarioRun;
-    runKind: StrategyDeskExecuteRunKind;
-    generatedAt: string;
-    reportId: string;
-    artifacts: Record<string, StrategyDeskRunArtifact>;
-  },
-): RuntimeStrategyDeskScenarioReport {
+function buildReport(input: {
+  scenario: RuntimeStrategyDeskScenarioManifest;
+  run: RuntimeStrategyDeskScenarioRun;
+  runKind: StrategyDeskExecuteRunKind;
+  generatedAt: string;
+  reportId: string;
+  artifacts: Record<string, StrategyDeskRunArtifact>;
+}): RuntimeStrategyDeskScenarioReport {
   const legOutcomes = input.scenario.legs.map((leg) => {
     const artifact = input.artifacts[leg.legId];
     if (!artifact || artifact.status === "skipped") {
@@ -840,11 +855,19 @@ function buildReport(
     };
   });
 
-  const passedCount = legOutcomes.filter((outcome) => outcome.status === "pass").length;
-  const blockedCount = legOutcomes.filter((outcome) => outcome.status === "blocked").length;
-  const skippedCount = legOutcomes.filter((outcome) => outcome.status === "not_applicable").length;
+  const passedCount = legOutcomes.filter(
+    (outcome) => outcome.status === "pass",
+  ).length;
+  const blockedCount = legOutcomes.filter(
+    (outcome) => outcome.status === "blocked",
+  ).length;
+  const skippedCount = legOutcomes.filter(
+    (outcome) => outcome.status === "not_applicable",
+  ).length;
   const overallStatus =
-    blockedCount > 0 || input.run.state === "failed" || input.run.state === "rejected"
+    blockedCount > 0 ||
+    input.run.state === "failed" ||
+    input.run.state === "rejected"
       ? ("blocked" as const)
       : ("pass" as const);
   const stage = stageForRunKind(input.runKind);
@@ -892,7 +915,8 @@ function buildReport(
         checkId: "scenario-ready-state",
         status: "pass",
         observedValue: input.scenario.state,
-        thresholdValue: input.runKind === "shadow" ? "shadow_ready+" : "paper_ready+",
+        thresholdValue:
+          input.runKind === "shadow" ? "shadow_ready+" : "paper_ready+",
         message: "Scenario state allowed composite execution.",
       },
       {
@@ -908,7 +932,8 @@ function buildReport(
       {
         checkId: "router-gates-enforced",
         status: "pass",
-        message: "Each leg ran through the existing Worker router with venue capability checks enabled.",
+        message:
+          "Each leg ran through the existing Worker router with venue capability checks enabled.",
       },
     ],
     approvals: [],
@@ -1068,7 +1093,8 @@ export async function executeRuntimeStrategyDeskScenarioWorkflow(
 
       if (!result || !isExecutionSuccessStatus(result.status)) {
         terminalState = "failed";
-        failureCode = artifact.errorCode ?? "strategy-desk-leg-execution-failed";
+        failureCode =
+          artifact.errorCode ?? "strategy-desk-leg-execution-failed";
         failureMessage =
           artifact.error ??
           `strategy-desk-leg-execution-failed:${leg.legId}:${artifact.status}`;
@@ -1110,9 +1136,10 @@ export async function executeRuntimeStrategyDeskScenarioWorkflow(
         error: message,
         errorCode: message.split(":")[0] || "strategy-desk-leg-blocked",
       };
-      terminalState = message.includes("not-supported") || message.includes("disabled")
-        ? "rejected"
-        : "failed";
+      terminalState =
+        message.includes("not-supported") || message.includes("disabled")
+          ? "rejected"
+          : "failed";
       failureCode = message.split(":")[0] || "strategy-desk-leg-blocked";
       failureMessage = message;
       run = replaceLegRun(
@@ -1151,7 +1178,7 @@ export async function executeRuntimeStrategyDeskScenarioWorkflow(
           legId: legRun.legId,
           attemptCount: 0,
           adapterKey: scenarioLeg
-            ? scenarioLeg.intent?.adapterKey ?? defaultAdapterKey(scenarioLeg)
+            ? (scenarioLeg.intent?.adapterKey ?? defaultAdapterKey(scenarioLeg))
             : "unknown",
           venueKey: scenarioLeg?.venueKey ?? "unknown",
           requestRef: `${run.scenarioRunId}:${legRun.legId}`,
@@ -1191,7 +1218,10 @@ export async function executeRuntimeStrategyDeskScenarioWorkflow(
         generatedAt: completedAt,
         reportId:
           input.reportId ??
-          createDeskId(`desk_report_${scenario.scenarioId}_${input.runKind}`, deps),
+          createDeskId(
+            `desk_report_${scenario.scenarioId}_${input.runKind}`,
+            deps,
+          ),
         artifacts,
       }),
     })

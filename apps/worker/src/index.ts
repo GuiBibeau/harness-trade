@@ -621,9 +621,7 @@ function parseAdminEntityActionPath(
   }
 }
 
-function parseRuntimeStrategyDeskExecuteRequest(
-  payload: unknown,
-): {
+function parseRuntimeStrategyDeskExecuteRequest(payload: unknown): {
   runKind: "shadow" | "paper";
   requestedBy: string;
   walletAddress: string;
@@ -651,7 +649,9 @@ function parseRuntimeStrategyDeskExecuteRequest(
   const reportId = String(record.reportId ?? "").trim();
   const maxRetriesPerLeg = Number(record.maxRetriesPerLeg);
   const trigger =
-    record.trigger && typeof record.trigger === "object" && !Array.isArray(record.trigger)
+    record.trigger &&
+    typeof record.trigger === "object" &&
+    !Array.isArray(record.trigger)
       ? (record.trigger as Record<string, unknown>)
       : null;
   if (!runKind || !requestedBy || !walletAddress) {
