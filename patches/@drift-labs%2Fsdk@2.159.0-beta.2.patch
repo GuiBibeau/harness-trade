@@ -1,3 +1,9 @@
+diff --git a/package.json b/package.json
+index 7bf472fd43c63d42dd67e14cb916ad1a328376fc..f19b2d9c147aa64537df1ed8c97a927cb83160cf 100644
+--- a/package.json
++++ b/package.json
+@@ -46,0 +47 @@
++		"@noble/hashes": "^1.8.0",
 diff --git a/lib/browser/driftClient.js b/lib/browser/driftClient.js
 index 41a66da1474c34ab67a9deb220993c9df3fb63eb..924b6544e89e04601289615d3ce73b2a56fe025d 100644
 --- a/lib/browser/driftClient.js
