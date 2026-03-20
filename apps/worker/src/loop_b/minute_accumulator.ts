@@ -236,9 +236,19 @@ function pairId(mark: Mark): string {
   return `${mark.baseMint}:${mark.quoteMint}`;
 }
 
+function markVenueIdentity(mark: Mark): string {
+  return [
+    mark.lineage?.marketType ?? "unknown",
+    mark.lineage?.protocol ?? mark.venue,
+    mark.lineage?.venue ?? mark.venue,
+    mark.lineage?.pool ?? "no_pool",
+    mark.lineage?.market ?? "no_market",
+  ].join(":");
+}
+
 function markEventId(mark: Mark): string {
   const sig = mark.evidence?.sigs?.[0] ?? "no_sig";
-  return `${pairId(mark)}:${mark.slot}:${sig}`;
+  return `${pairId(mark)}:${mark.slot}:${sig}:${markVenueIdentity(mark)}`;
 }
 
 function asFiniteNumber(value: string): number | null {

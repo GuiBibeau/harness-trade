@@ -429,6 +429,69 @@ describe("worker loop B minute accumulator", () => {
     });
   });
 
+  test("keeps same-signature multi-venue marks distinct", async () => {
+    const { env, kvStore } = createEnv({ withR2: false });
+    const mock = createMockDoState();
+    const accumulator = new MinuteAccumulator(mock.state, env, {
+      now: () => "2026-02-21T18:06:00.000Z",
+    });
+
+    await accumulator.fetch(
+      new Request("https://internal/loop-b/ingest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          observedAt: "2026-02-21T18:06:00.000Z",
+          marks: [
+            createMark({
+              slot: 720,
+              ts: "2026-02-21T18:05:10.000Z",
+              px: "5.1",
+              sig: "shared-sig-720",
+              protocol: "raydium",
+              venue: "raydium",
+              pool: "Czfq3xZZD7f7mUXGQ95M5x7TQYtjY1fM6bMpiKFF9s8s",
+            }),
+            createMark({
+              slot: 720,
+              ts: "2026-02-21T18:05:12.000Z",
+              px: "5.12",
+              sig: "shared-sig-720",
+              protocol: "openbook",
+              venue: "openbook",
+              marketType: "clob",
+              market: "7YttLkHDoNzpkAd3gg4MM3VQRSJ5ZK7VMBdb6Yf2mP6P",
+            }),
+          ],
+        }),
+      }),
+    );
+
+    const featureSet = JSON.parse(
+      kvStore.get(LOOP_B_FEATURES_LATEST_KEY) ?? "{}",
+    ) as {
+      rows: Array<{
+        pairId: string;
+        markCount: number;
+        sourceProtocols: string[];
+        sourceVenues: string[];
+        venueLineage: Array<{
+          protocol: string;
+          venue: string;
+          marketType: string;
+        }>;
+      }>;
+    };
+    const solUsdc = featureSet.rows.find((row) =>
+      row.pairId.startsWith("So11111111111111111111111111111111111111112:"),
+    );
+
+    expect(solUsdc?.markCount).toBe(2);
+    expect(solUsdc?.sourceProtocols).toEqual(["openbook", "raydium"]);
+    expect(solUsdc?.sourceVenues).toEqual(["openbook", "raydium"]);
+    expect(solUsdc?.venueLineage).toHaveLength(2);
+  });
+
   test("late correction re-finalizes the minute with updated scores", async () => {
     const { env, kvStore } = createEnv({ withR2: false });
     const mock = createMockDoState();
