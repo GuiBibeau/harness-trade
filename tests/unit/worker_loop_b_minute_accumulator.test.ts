@@ -5,8 +5,11 @@ import {
   LOOP_B_HEALTH_KEY,
   LOOP_B_LIQUIDITY_STRESS_KEY,
   LOOP_B_MINUTE_ACCUMULATOR_NAME,
+  LOOP_B_PARITY_VIEW_KEY,
   LOOP_B_SCORES_LATEST_KEY,
   LOOP_B_TOP_MOVERS_KEY,
+  LOOP_B_VENUE_FEATURES_LATEST_KEY,
+  LOOP_B_VENUE_SCORES_LATEST_KEY,
   MinuteAccumulator,
   publishMarksToMinuteAccumulator,
 } from "../../apps/worker/src/loop_b/minute_accumulator";
@@ -225,6 +228,9 @@ describe("worker loop B minute accumulator", () => {
     expect(kvStore.has(LOOP_B_ANOMALY_FEED_KEY)).toBe(true);
     expect(kvStore.has(LOOP_B_FEATURES_LATEST_KEY)).toBe(true);
     expect(kvStore.has(LOOP_B_SCORES_LATEST_KEY)).toBe(true);
+    expect(kvStore.has(LOOP_B_VENUE_FEATURES_LATEST_KEY)).toBe(true);
+    expect(kvStore.has(LOOP_B_VENUE_SCORES_LATEST_KEY)).toBe(true);
+    expect(kvStore.has(LOOP_B_PARITY_VIEW_KEY)).toBe(true);
     expect(kvStore.has(LOOP_B_HEALTH_KEY)).toBe(true);
     expect(kvStore.has(LOOP_C_CANDIDATE_POOL_LATEST_KEY)).toBe(true);
     expect(
@@ -441,6 +447,115 @@ describe("worker loop B minute accumulator", () => {
     });
   });
 
+  test("publishes venue-aware feature, score, and parity artifacts", async () => {
+    const { env, kvStore } = createEnv({ withR2: false });
+    const mock = createMockDoState();
+    const accumulator = new MinuteAccumulator(mock.state, env, {
+      now: () => "2026-02-21T18:05:00.000Z",
+    });
+
+    await accumulator.fetch(
+      new Request("https://internal/loop-b/ingest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          observedAt: "2026-02-21T18:05:00.000Z",
+          marks: [
+            createMark({
+              slot: 710,
+              ts: "2026-02-21T18:04:10.000Z",
+              px: "5.1",
+              sig: "sig-raydium-710",
+              protocol: "raydium",
+              venue: "raydium",
+              pool: "Czfq3xZZD7f7mUXGQ95M5x7TQYtjY1fM6bMpiKFF9s8s",
+            }),
+            createMark({
+              slot: 711,
+              ts: "2026-02-21T18:04:25.000Z",
+              px: "5.15",
+              sig: "sig-openbook-711",
+              protocol: "openbook",
+              venue: "openbook",
+              marketType: "clob",
+              market: "7YttLkHDoNzpkAd3gg4MM3VQRSJ5ZK7VMBdb6Yf2mP6P",
+            }),
+          ],
+        }),
+      }),
+    );
+
+    const venueFeatureSet = JSON.parse(
+      kvStore.get(LOOP_B_VENUE_FEATURES_LATEST_KEY) ?? "{}",
+    ) as {
+      rows: Array<{
+        venue: string;
+        marketType: string;
+        pools: string[];
+        markets: string[];
+      }>;
+    };
+    expect(venueFeatureSet.rows.map((row) => row.venue).sort()).toEqual([
+      "openbook",
+      "raydium",
+    ]);
+    expect(
+      venueFeatureSet.rows.find((row) => row.venue === "raydium"),
+    ).toMatchObject({
+      marketType: "spot",
+      pools: ["Czfq3xZZD7f7mUXGQ95M5x7TQYtjY1fM6bMpiKFF9s8s"],
+    });
+    expect(
+      venueFeatureSet.rows.find((row) => row.venue === "openbook"),
+    ).toMatchObject({
+      marketType: "clob",
+      markets: ["7YttLkHDoNzpkAd3gg4MM3VQRSJ5ZK7VMBdb6Yf2mP6P"],
+    });
+
+    const venueScoreSet = JSON.parse(
+      kvStore.get(LOOP_B_VENUE_SCORES_LATEST_KEY) ?? "{}",
+    ) as {
+      rows: Array<{
+        venue: string;
+        marketType: string;
+        featuresRef: string;
+      }>;
+    };
+    expect(venueScoreSet.rows.map((row) => row.venue).sort()).toEqual([
+      "openbook",
+      "raydium",
+    ]);
+    expect(
+      venueScoreSet.rows.find((row) => row.venue === "openbook")?.featuresRef,
+    ).toContain("loopB:v1:features:by_venue:latest:row:");
+
+    const parityView = JSON.parse(
+      kvStore.get(LOOP_B_PARITY_VIEW_KEY) ?? "{}",
+    ) as {
+      rows: Array<{
+        pairId: string;
+        availableVenues: string[];
+        unavailableVenues: string[];
+        venues: Array<{
+          venue: string;
+          status: string;
+          reasonCode: string;
+        }>;
+      }>;
+    };
+    const solUsdc = parityView.rows.find((row) =>
+      row.pairId.startsWith("So11111111111111111111111111111111111111112:"),
+    );
+    expect(solUsdc?.availableVenues).toEqual(["openbook", "raydium"]);
+    expect(solUsdc?.unavailableVenues).toContain("jupiter");
+    expect(
+      solUsdc?.venues.find((row) => row.venue === "jupiter"),
+    ).toMatchObject({
+      status: "unavailable",
+      reasonCode: "no_mark_for_pair_in_minute",
+    });
+  });
+
   test("keeps same-signature multi-venue marks distinct", async () => {
     const { env, kvStore } = createEnv({ withR2: false });
     const mock = createMockDoState();
@@ -556,6 +671,81 @@ describe("worker loop B minute accumulator", () => {
       positionAccounts: ["drift-user-account"],
       settlementMints: ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"],
     });
+
+    const parityView = JSON.parse(
+      kvStore.get(LOOP_B_PARITY_VIEW_KEY) ?? "{}",
+    ) as {
+      rows: Array<{
+        venues: Array<{
+          venue: string;
+          status: string;
+          reasonCode: string;
+          artifactRef?: string;
+        }>;
+      }>;
+    };
+
+    expect(
+      parityView.rows[0]?.venues.find((row) => row.venue === "drift"),
+    ).toMatchObject({
+      status: "available",
+      reasonCode: "observed_marks",
+    });
+    expect(
+      parityView.rows[0]?.venues.find((row) => row.venue === "jupiter_perps"),
+    ).toMatchObject({
+      status: "unavailable",
+      reasonCode: "blocked_in_loop_a",
+      artifactRef: "docs/strategy-lab/pilots/jupiter-perps-readiness/README.md",
+    });
+  });
+
+  test("keeps finalized minute on empty venue-aware artifacts", async () => {
+    const { env, kvStore } = createEnv({ withR2: false });
+    const mock = createMockDoState();
+    const accumulator = new MinuteAccumulator(mock.state, env, {
+      now: () => "2026-02-21T18:08:00.000Z",
+    });
+
+    await accumulator.fetch(
+      new Request("https://internal/loop-b/ingest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          observedAt: "2026-02-21T18:08:00.000Z",
+          marks: [
+            createMark({
+              slot: 740,
+              ts: "2026-02-21T18:07:10.000Z",
+              px: "0",
+              sig: "sig-zero-740",
+            }),
+          ],
+        }),
+      }),
+    );
+
+    const venueFeatureSet = JSON.parse(
+      kvStore.get(LOOP_B_VENUE_FEATURES_LATEST_KEY) ?? "{}",
+    ) as {
+      minute: string;
+      count: number;
+      rows: unknown[];
+    };
+    const parityView = JSON.parse(
+      kvStore.get(LOOP_B_PARITY_VIEW_KEY) ?? "{}",
+    ) as {
+      minute: string;
+      count: number;
+      rows: unknown[];
+    };
+
+    expect(venueFeatureSet.minute).toBe("2026-02-21T18:07:00.000Z");
+    expect(venueFeatureSet.count).toBe(0);
+    expect(venueFeatureSet.rows).toEqual([]);
+    expect(parityView.minute).toBe("2026-02-21T18:07:00.000Z");
+    expect(parityView.count).toBe(0);
+    expect(parityView.rows).toEqual([]);
   });
 
   test("late correction re-finalizes the minute with updated scores", async () => {
