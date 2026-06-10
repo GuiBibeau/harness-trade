@@ -3364,7 +3364,6 @@
       </div>
     {:else}
       <div class="ticker-symbol">
-        <span class="stream-dot {streamHealth}" aria-hidden="true"></span>
         <button
           class="star-btn"
           class:starred={watchlist.includes(selectedSymbol)}
@@ -3562,7 +3561,7 @@
                 <strong>{selectedSymbol}-PERP</strong>
                 <span class="chart-tf">{selectedTimeframe}</span>
                 <span class="chart-health {streamHealth}">
-                  <span class="stream-dot {streamHealth}" aria-hidden="true"></span>{streamHealth}
+                  {streamHealth}
                 </span>
                 <small>{marketFresh}</small>
               {/if}
