@@ -105,6 +105,7 @@
     checkPhoenixAccess,
     ensureTraderRegisteredIxs,
     fetchPhoenixTraderState,
+    PHOENIX_REFERRAL_CODE,
     type PhoenixPosition,
     type PhoenixSide,
     type PhoenixTraderState,
@@ -215,9 +216,6 @@
 
   // Phoenix onboarding (beta whitelist + referral attribution).
   let phoenixWhitelisted: boolean | null = null;
-  let inviteCodeInput = "";
-  let inviteBusy = false;
-  let inviteError = "";
   let onboardedAddress = "";
 
   // Phoenix venue (live trading) state.
@@ -1852,6 +1850,18 @@
     try {
       const access = await checkPhoenixAccess(authority);
       phoenixWhitelisted = access.whitelisted;
+      // No manual invite step: our referral code doubles as the invite —
+      // activate it automatically for first-time wallets.
+      if (!access.whitelisted) {
+        const activated = await activatePhoenixInvite(
+          authority,
+          PHOENIX_REFERRAL_CODE,
+        );
+        if (activated.ok) {
+          phoenixWhitelisted = true;
+          statusMessage = "phoenix-access-activated";
+        }
+      }
     } catch {
       phoenixWhitelisted = null;
     }
@@ -1875,26 +1885,6 @@
     } catch {
       // wallet declined the signature or transient failure — retry next visit
       onboardedAddress = "";
-    }
-  }
-
-  async function submitInviteCode(event: SubmitEvent): Promise<void> {
-    event.preventDefault();
-    const code = inviteCodeInput.trim();
-    if (!code || !phoenixAuthority || inviteBusy) return;
-    inviteBusy = true;
-    inviteError = "";
-    try {
-      const result = await activatePhoenixInvite(phoenixAuthority, code);
-      if (result.ok) {
-        phoenixWhitelisted = true;
-        inviteCodeInput = "";
-        statusMessage = "phoenix-access-activated";
-      } else {
-        inviteError = result.message;
-      }
-    } finally {
-      inviteBusy = false;
     }
   }
 
@@ -3233,25 +3223,10 @@
                   <span class="account-row-label">Phoenix</span>
                   <span class="account-row-value">beta access</span>
                   <span class="macro-chip {phoenixWhitelisted ? 'up' : 'warn'}">
-                    {phoenixWhitelisted ? "Active" : "Invite needed"}
+                    {phoenixWhitelisted ? "Active" : "Pending"}
                   </span>
                 </div>
-                {#if !phoenixWhitelisted}
-                  <form class="invite-form" onsubmit={submitInviteCode}>
-                    <input
-                      bind:value={inviteCodeInput}
-                      placeholder="Invite code"
-                      aria-label="Phoenix invite code"
-                      autocomplete="off"
-                    />
-                    <button class="row-action" type="submit" disabled={inviteBusy || !inviteCodeInput.trim()}>
-                      {inviteBusy ? "…" : "Apply"}
-                    </button>
-                  </form>
-                  {#if inviteError}
-                    <p class="account-dropdown-note warn">{inviteError}</p>
-                  {/if}
-                {/if}
+
               {/if}
 
               <div class="account-row">
@@ -5350,18 +5325,6 @@
   .row-action:hover:not(:disabled) {
     color: var(--ink);
     border-color: rgba(255, 77, 151, 0.45);
-  }
-
-  .invite-form {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.4rem;
-  }
-
-  .invite-form input {
-    min-height: 1.8rem;
-    font-size: 0.74rem;
-    text-transform: uppercase;
   }
 
   .account-dropdown-note {
