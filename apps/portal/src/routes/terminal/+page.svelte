@@ -13,6 +13,7 @@
     IDLE_READ,
     type AiRead,
   } from "$lib/ai";
+  import { track } from "$lib/telemetry";
   import {
     chartLinePrefs,
     freshSnapshot,
@@ -618,6 +619,22 @@
     phoenixTotalCollateral > 0
       ? (marginInUseUsd / phoenixTotalCollateral) * 100
       : 0;
+  // Market context attached to every money event — the model's "state".
+  function marketContext(): Record<string, unknown> {
+    return {
+      symbol: selectedSymbol,
+      venue: tradeMode,
+      mark: latestPrice,
+      spreadBps: Number.isFinite(spreadBps) ? spreadBps : null,
+      fundingPct8h: fundingPercent,
+      openInterest: marketStats?.openInterest ?? null,
+      vol24h: marketStats?.dayNtlVlm ?? null,
+      wallet: phoenixAuthority || null,
+      equityUsd: accountEquityUsd,
+      freeCollateralUsd: phoenixCollateral,
+    };
+  }
+
   function liqDistancePctOf(position: PhoenixPosition): number | null {
     const mark =
       marketMids[position.symbol] ??
@@ -873,6 +890,20 @@
       window.setInterval(() => {
         void probeRpc();
       }, 15_000),
+      window.setInterval(() => {
+        if (!phoenixAuthority || enrichedPositions.length === 0) return;
+        track("pnl_snapshot", {
+          ...marketContext(),
+          positions: enrichedPositions.map((position) => ({
+            symbol: position.symbol,
+            size: position.size,
+            entry: position.entryPrice,
+            upnl: position.unrealizedPnl,
+            liq: position.liquidationPrice,
+            marginUsd: position.marginUsd,
+          })),
+        });
+      }, 60_000),
     ];
     const onVisible = () => {
       if (document.visibilityState === "visible") {
@@ -939,6 +970,7 @@
   }
 
   async function switchPhoenixMarket(symbol: string): Promise<void> {
+    track("market_switched", { from: selectedSymbol, to: symbol, venue: "perps" });
     if (!symbol) return;
     phoenixStream?.close();
     phoenixStream = null;
@@ -1312,6 +1344,7 @@
   }
 
   function recordFiredAlert(title: string, body: string): void {
+    track("alert_fired", { ...marketContext(), title, body });
     const entry: FiredAlert = { ts: Date.now(), title, body };
     alertLog = [entry, ...alertLog].slice(0, 50);
     try {
@@ -2000,6 +2033,7 @@
       });
       swapStatus = "done";
       statusMessage = "swap-submitted";
+      track("swap_confirmed", { ...marketContext(), inSol: amount, outUsdc: swapQuote?.outUsdc ?? null });
       void refreshWalletBalance(address);
     } catch (error) {
       swapStatus = "error";
@@ -2042,6 +2076,7 @@
 
   function setTradeMode(mode: "perps" | "spot", followAsset = true): void {
     if (tradeMode === mode) return;
+    track("venue_switched", { from: tradeMode, to: mode });
     // An explicit user choice overrides any not-yet-applied restored pref.
     pendingTradeMode = null;
     tradeMode = mode;
@@ -2381,6 +2416,19 @@
         phoenixAuthority,
         phoenixTrader?.registered ?? false,
       );
+      track("order_submitted", {
+        ...marketContext(),
+        side,
+        orderType: tradeType,
+        notionalUsd: tradePreview.notionalUsd,
+        leverage: tradeLeverage,
+        sizingMode,
+        takeProfitPrice,
+        stopLossPrice,
+        estEntry: tradePreview.entry,
+        slippageBps: tradePreview.slippageBps,
+        estLiqPrice: tradePreview.liqPrice,
+      });
       const plan = await buildPlaceOrderPlan({
         authority: phoenixAuthority,
         symbol: selectedSymbol,
@@ -2409,6 +2457,11 @@
         },
       );
       statusMessage = "phoenix-order-submitted";
+      track("order_confirmed", {
+        ...marketContext(),
+        side,
+        signature: lastTradeSignature,
+      });
       noteTrade({
         ts: Date.now(),
         venue: "perp",
@@ -2424,6 +2477,7 @@
       void refreshWalletBalance(phoenixAuthority);
     } catch (error) {
       phoenixActionError = error instanceof Error ? error.message : "order-failed";
+      track("order_failed", { ...marketContext(), error: phoenixActionError });
     } finally {
       phoenixBusy = false;
     }
@@ -2451,6 +2505,24 @@
         ],
       });
       statusMessage = "phoenix-position-close-submitted";
+      {
+        const closing = enrichedPositions.find(
+          (position) => position.symbol === symbol,
+        );
+        track("position_closed", {
+          ...marketContext(),
+          closedSymbol: symbol,
+          size,
+          entryPrice: closing?.entryPrice ?? null,
+          realizedUpnlEst: closing?.unrealizedPnl ?? null,
+          marginUsd: closing?.marginUsd ?? null,
+          roePct:
+            closing?.unrealizedPnl != null && closing?.marginUsd
+              ? (closing.unrealizedPnl / closing.marginUsd) * 100
+              : null,
+          signature: lastTradeSignature,
+        });
+      }
       noteTrade({
         ts: Date.now(),
         venue: "perp",
@@ -2504,6 +2576,7 @@
         ],
       });
       statusMessage = "phoenix-cancel-submitted";
+      track("orders_cancelled", { ...marketContext(), cancelSymbol: symbol, cancelSide: side });
       void refreshPhoenixTrader();
     } catch (error) {
       phoenixActionError = error instanceof Error ? error.message : "cancel-failed";
@@ -2544,12 +2617,18 @@
         },
       );
       statusMessage = `phoenix-${direction}-submitted`;
+      track(`${direction}_confirmed`, {
+        ...marketContext(),
+        amountUsd: amount,
+        signature: collateralSignature,
+      });
       depositAmount = "";
       withdrawAmount = "";
       void refreshPhoenixTrader();
       void refreshWalletBalance(phoenixAuthority);
     } catch (error) {
       collateralError = error instanceof Error ? error.message : `${direction}-failed`;
+      track(`${direction}_failed`, { ...marketContext(), amountUsd: amount, error: collateralError });
     } finally {
       collateralBusy = false;
     }
