@@ -48,7 +48,7 @@
   .cta {
     display: inline-block;
     background: var(--accent);
-    color: #14060c;
+    color: var(--accent-contrast);
     font-weight: 700;
     padding: 0.7rem 1.5rem;
     border-radius: var(--radius);

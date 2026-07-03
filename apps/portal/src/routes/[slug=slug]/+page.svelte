@@ -417,7 +417,7 @@
     transition: border-color 140ms ease, background 140ms ease;
   }
   .rail-btn small { font-weight: 500; font-size: 0.68rem; color: var(--muted); }
-  .rail-btn.spot { background: var(--accent); border-color: transparent; color: #14060c; }
+  .rail-btn.spot { background: var(--accent); border-color: transparent; color: var(--accent-contrast); }
   .rail-btn.spot small { color: rgba(20, 6, 12, 0.65); }
   .rail-btn.spot:hover { filter: brightness(1.07); }
   .rail-btn.long:hover { border-color: var(--up); }

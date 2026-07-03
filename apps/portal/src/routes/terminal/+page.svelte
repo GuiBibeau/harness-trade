@@ -69,6 +69,7 @@
     type JupiterQuote,
   } from "$lib/funding";
   import { BrandMark } from "@trader-ralph/ui";
+  import { colors } from "@trader-ralph/ui/tokens";
   import {
     clearJournal,
     entriesToday,
@@ -150,8 +151,8 @@
   const DEFAULT_VISIBLE_CANDLES = 150;
   const MAX_VISIBLE_CANDLES = 180;
   const BOOK_LADDER_LEVELS = 10;
-  const UP_COLOR = "#2ce97f";
-  const DOWN_COLOR = "#ff5a5f";
+  const UP_COLOR = colors.up;
+  const DOWN_COLOR = colors.down; // was #ff5a5f — unified to the token red
   const SOLANA_MAINNET_RPC = "https://api.mainnet-beta.solana.com";
 
   let selectedSymbol = DEFAULT_PHOENIX_SYMBOL;
@@ -2342,7 +2343,7 @@
     return {
       time: Math.floor(point.ts / 1000) as UTCTimestamp,
       value: point.volumeQuote ?? point.volume ?? 0,
-      color: up ? "rgba(44, 233, 127, 0.45)" : "rgba(255, 90, 95, 0.45)",
+      color: up ? "rgba(44, 233, 127, 0.45)" : "rgba(255, 90, 106, 0.45)",
     };
   }
 
@@ -2351,7 +2352,7 @@
     lwChart = createChart(chartContainer, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#0f1116" },
+        background: { type: ColorType.Solid, color: colors.chartBg },
         textColor: "#8c95a4",
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
         fontSize: 11,
@@ -5853,7 +5854,7 @@
   .chart-canvas-shell {
     position: relative;
     min-height: 0;
-    background: #0f1116;
+    background: var(--chart-bg);
     overflow: hidden;
   }
 
@@ -6340,11 +6341,11 @@
   }
 
   .book-ladder .book-row.ask .book-price {
-    color: #ff5a5f;
+    color: var(--down);
   }
 
   .book-ladder .book-row.bid .book-price {
-    color: #2ce97f;
+    color: var(--up);
   }
 
   .depth-bar {
@@ -6358,7 +6359,7 @@
   }
 
   .book-ladder .book-row.ask .depth-bar {
-    background: rgba(255, 90, 95, 0.24);
+    background: rgba(255, 90, 106, 0.24);
   }
 
   .book-ladder .book-row.bid .depth-bar {
@@ -6975,7 +6976,7 @@
   .up,
   .spark.up polyline {
     color: #8decc3;
-    stroke: #2ce97f;
+    stroke: var(--up);
   }
 
   .down,

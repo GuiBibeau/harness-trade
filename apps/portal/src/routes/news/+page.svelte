@@ -125,7 +125,7 @@
     margin-top: 1rem;
     text-align: center;
     background: var(--accent);
-    color: #14060c;
+    color: var(--accent-contrast);
     font-weight: 700;
     font-size: 0.85rem;
     padding: 0.55rem;

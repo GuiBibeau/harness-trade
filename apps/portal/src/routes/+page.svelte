@@ -341,7 +341,7 @@
   .nav nav a:hover { color: var(--ink); }
   .cta {
     background: var(--accent);
-    color: #14060c;
+    color: var(--accent-contrast);
     font-weight: 700;
     padding: 0.55rem 1.1rem;
     border-radius: var(--radius);

@@ -3,7 +3,7 @@
 
 import { read } from "$app/server";
 import satori from "satori";
-import { brandMark } from "$lib/server/og";
+import { brandMark, C } from "$lib/server/og";
 import { Resvg } from "@resvg/resvg-js";
 import type { RequestHandler } from "./$types";
 
@@ -36,10 +36,10 @@ export const GET: RequestHandler = async ({ setHeaders }) => {
         height: `${H}px`,
         display: "flex",
         flexDirection: "column",
-        backgroundColor: "#0a0b0e",
+        backgroundColor: C.paper,
         padding: "64px 80px",
         fontFamily: "Inter",
-        color: "#eef1f6",
+        color: C.ink,
       },
       children: [
         {
@@ -49,7 +49,7 @@ export const GET: RequestHandler = async ({ setHeaders }) => {
             children: [
               brandMark(34),
               { type: "span", props: { style: { marginLeft: "14px" }, children: "RALPH" } },
-              { type: "span", props: { style: { color: "#ff4d97" }, children: "·TERMINAL" } },
+              { type: "span", props: { style: { color: C.accent }, children: "·TERMINAL" } },
             ],
           },
         },
@@ -67,21 +67,21 @@ export const GET: RequestHandler = async ({ setHeaders }) => {
             },
             children: [
               { type: "div", props: { style: { display: "flex" }, children: "SOL to SPACEX." } },
-              { type: "div", props: { style: { display: "flex", color: "#ff4d97" }, children: "One account." } },
+              { type: "div", props: { style: { display: "flex", color: C.accent }, children: "One account." } },
             ],
           },
         },
         {
           type: "div",
           props: {
-            style: { display: "flex", fontSize: "30px", color: "#8c95a4", marginTop: "40px" },
+            style: { display: "flex", fontSize: "30px", color: C.muted, marginTop: "40px" },
             children: "Spot and perps on 300+ Solana markets, settled in USDC",
           },
         },
         {
           type: "div",
           props: {
-            style: { display: "flex", marginTop: "auto", fontSize: "24px", color: "#8c95a4" },
+            style: { display: "flex", marginTop: "auto", fontSize: "24px", color: C.muted },
             children: "Spot by Jupiter · perps on Phoenix · email login, no seed phrase",
           },
         },
