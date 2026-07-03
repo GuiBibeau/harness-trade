@@ -4,13 +4,14 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "dev": "bun run --cwd apps/portal dev",
     "build": "bun run --cwd apps/portal build",
     "start": "bun run --cwd apps/portal start",
-    "typecheck": "bun run --cwd apps/portal typecheck",
+    "typecheck": "bun run --cwd packages/ui typecheck && bun run --cwd apps/portal typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check . --write",
     "test": "bun run typecheck"
