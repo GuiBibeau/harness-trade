@@ -5156,7 +5156,7 @@
   .chart-footer button,
   .book-row {
     border: 1px solid var(--line);
-    border-radius: 0.38rem;
+    border-radius: 0;
     background: var(--surface-2);
     color: var(--ink);
     min-height: 2rem;
@@ -5221,7 +5221,7 @@
   /* Loading skeletons */
   .skeleton {
     display: inline-block;
-    border-radius: 0.3rem;
+    border-radius: 0;
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0.04) 25%,
@@ -5277,7 +5277,7 @@
     align-items: center;
     gap: 0.5rem;
     border: 1px solid var(--line);
-    border-radius: 0.5rem;
+    border-radius: 0;
     background: var(--surface-2);
     color: var(--ink);
     min-height: 2.2rem;
@@ -5336,7 +5336,7 @@
     gap: 0.5rem;
     padding: 0.7rem;
     border: 1px solid var(--line);
-    border-radius: 0.6rem;
+    border-radius: 0;
     background: var(--surface);
     box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.5);
   }
@@ -5372,7 +5372,7 @@
 
   .wallet-badge {
     flex: 0 0 auto;
-    border-radius: 999px;
+    border-radius: 0;
     padding: 0.18rem 0.5rem;
     font-size: 0.62rem;
     font-weight: 700;
@@ -5412,7 +5412,7 @@
     gap: 0.5rem;
     width: 100%;
     border: 1px solid var(--line-soft);
-    border-radius: 0.45rem;
+    border-radius: 0;
     background: rgba(255, 255, 255, 0.02);
     padding: 0.45rem 0.55rem;
     text-align: left;
@@ -5460,7 +5460,7 @@
 
   .row-action {
     border: 1px solid var(--line);
-    border-radius: 0.35rem;
+    border-radius: 0;
     background: var(--surface-2);
     color: var(--muted);
     font-size: 0.66rem;
@@ -5485,7 +5485,7 @@
 
   .account-action {
     border: 1px solid var(--line);
-    border-radius: 0.45rem;
+    border-radius: 0;
     background: var(--surface-2);
     color: var(--ink);
     min-height: 2.1rem;
@@ -5526,7 +5526,7 @@
     display: grid;
     gap: 0.6rem;
     border: 1px dashed var(--line);
-    border-radius: 0.5rem;
+    border-radius: 0;
     padding: 0.75rem;
   }
 
@@ -5543,7 +5543,7 @@
     margin: 0 0.65rem 0.4rem;
     padding: 0.5rem 0.6rem;
     border: 1px solid var(--line-soft);
-    border-radius: 0.5rem;
+    border-radius: 0;
     background: rgba(255, 255, 255, 0.02);
   }
 
@@ -5613,7 +5613,7 @@
     justify-content: center;
     padding: 0.85rem;
     border: 1px solid var(--line-soft);
-    border-radius: 0.6rem;
+    border-radius: 0;
     background: rgba(255, 255, 255, 0.02);
   }
 
@@ -5656,7 +5656,7 @@
     position: relative;
     min-height: 12rem;
     border: 1px solid var(--line);
-    border-radius: 0.6rem;
+    border-radius: 0;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
       var(--surface);
     overflow: hidden;
@@ -5757,7 +5757,7 @@
     color: var(--ink);
     background: var(--paper);
     border: 1px solid var(--line);
-    border-radius: 0.35rem;
+    border-radius: 0;
     min-height: 2rem;
     padding: 0.3rem 0.45rem;
   }
@@ -5820,7 +5820,7 @@
   .price-mode-toggle {
     gap: 0;
     border: 1px solid var(--line);
-    border-radius: 0.45rem;
+    border-radius: 0;
     padding: 0.15rem;
     background: var(--paper);
   }
@@ -5869,7 +5869,7 @@
     max-width: calc(100% - 6rem);
     padding: 0.4rem 0.6rem;
     border: 1px solid var(--line-soft);
-    border-radius: 0.5rem;
+    border-radius: 0;
     background: rgba(10, 13, 17, 0.66);
     backdrop-filter: blur(7px);
     color: var(--muted);
@@ -6049,7 +6049,7 @@
     bottom: -1px;
     left: 22%;
     height: 2px;
-    border-radius: 2px;
+    border-radius: 0;
     background: var(--accent);
     content: "";
   }
@@ -6220,7 +6220,7 @@
     left: 0.15rem;
     width: 0.64rem;
     height: 2px;
-    border-radius: 1rem;
+    border-radius: 0;
     background: currentColor;
   }
 
@@ -6243,7 +6243,7 @@
     position: absolute;
     right: 0.1rem;
     height: 2px;
-    border-radius: 1rem;
+    border-radius: 0;
     background: currentColor;
   }
 
@@ -6317,7 +6317,7 @@
     min-height: 1.08rem;
     overflow: hidden;
     border: 0;
-    border-radius: 0.18rem;
+    border-radius: 0;
     background: transparent;
     color: var(--ink);
     padding: 0 0.3rem;
@@ -6354,7 +6354,7 @@
     bottom: 2px;
     left: 0;
     z-index: 0;
-    border-radius: 0.2rem;
+    border-radius: 0;
     pointer-events: none;
   }
 
@@ -6422,7 +6422,7 @@
     flex-direction: column;
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: 0.7rem;
+    border-radius: 0;
     background: var(--surface);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.04),
@@ -6503,7 +6503,7 @@
     width: 1.9rem;
     height: 1.9rem;
     border: 1px solid var(--line);
-    border-radius: 0.4rem;
+    border-radius: 0;
     background: var(--surface-2);
     color: var(--muted);
     font-size: 1.2rem;
@@ -6626,7 +6626,7 @@
 
   .auth-note {
     margin: 0;
-    border-radius: 0.45rem;
+    border-radius: 0;
     padding: 0.55rem 0.7rem;
     background: var(--surface-2);
     color: var(--muted);
@@ -6643,7 +6643,7 @@
   .auth-callout {
     display: grid;
     gap: 0.35rem;
-    border-radius: 0.5rem;
+    border-radius: 0;
     padding: 0.85rem;
     background: var(--surface-2);
     border: 1px solid var(--line);
@@ -6850,7 +6850,7 @@
   .section-nav button {
     flex: 0 0 auto;
     border: 1px solid var(--line);
-    border-radius: 999px;
+    border-radius: 0;
     background: var(--surface-2);
     color: var(--muted);
     font-size: 0.74rem;
@@ -6868,7 +6868,7 @@
   :where(button, a, select, input):focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
-    border-radius: 0.3rem;
+    border-radius: 0;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -6884,7 +6884,7 @@
   /* ── Macro panels: verdict badge, signal rows, sparklines ─────────── */
   .verdict-badge {
     flex: 0 0 auto;
-    border-radius: 999px;
+    border-radius: 0;
     padding: 0.2rem 0.55rem;
     font-size: 0.62rem;
     font-weight: 800;
@@ -6962,7 +6962,7 @@
 
   .macro-chip {
     justify-self: end;
-    border-radius: 999px;
+    border-radius: 0;
     padding: 0.1rem 0.5rem;
     font-size: 0.6rem;
     font-weight: 700;
@@ -7030,7 +7030,7 @@
     padding: 0.45rem 0.6rem;
     border-left: 2px solid rgba(255, 77, 151, 0.55);
     background: rgba(255, 255, 255, 0.015);
-    border-radius: 0 0.35rem 0.35rem 0;
+    border-radius: 0;
     font-size: 0.76rem;
     line-height: 1.45;
   }
@@ -7084,7 +7084,7 @@
   .desk-skeleton i {
     display: block;
     height: 0.5rem;
-    border-radius: 999px;
+    border-radius: 0;
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0.035) 25%,
@@ -7117,7 +7117,7 @@
        height-constrained modal grid can never collapse this row. */
     min-height: 2.45rem;
     border: 1px solid var(--line);
-    border-radius: 0.45rem;
+    border-radius: 0;
     overflow: hidden;
   }
 
@@ -7149,7 +7149,7 @@
     display: grid;
     gap: 0.05rem;
     border: 1px solid var(--line-soft);
-    border-radius: 0.45rem;
+    border-radius: 0;
     padding: 0.4rem 0.65rem;
     background: rgba(255, 255, 255, 0.02);
   }
@@ -7210,7 +7210,7 @@
     display: block;
     width: clamp(8rem, 18vw, 16rem);
     height: 0.45rem;
-    border-radius: 999px;
+    border-radius: 0;
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0.03) 25%,
@@ -7315,7 +7315,7 @@
     min-width: 1.05rem;
     height: 1.05rem;
     padding: 0 0.25rem;
-    border-radius: 999px;
+    border-radius: 0;
     background: var(--accent);
     color: #04130d;
     font-size: 0.6rem;
@@ -7341,7 +7341,7 @@
     gap: 0.5rem;
     padding: 0.4rem 0.5rem;
     border: 1px solid var(--line-soft);
-    border-radius: 0.4rem;
+    border-radius: 0;
     background: rgba(255, 255, 255, 0.02);
     font-size: 0.78rem;
   }
@@ -7356,7 +7356,7 @@
   }
 
   .alert-tier {
-    border-radius: 999px;
+    border-radius: 0;
     padding: 0.1rem 0.45rem;
     font-size: 0.58rem;
     font-weight: 800;

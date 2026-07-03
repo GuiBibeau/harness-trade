@@ -54,7 +54,7 @@ a {
 
 *::-webkit-scrollbar-thumb {
   background: #2a2f3a;
-  border-radius: 999px;
+  border-radius: 0;
   border: 2px solid transparent;
   background-clip: content-box;
 }

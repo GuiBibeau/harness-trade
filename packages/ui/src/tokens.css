@@ -25,8 +25,9 @@
      theme via colors.chartBg). */
   --chart-bg: #0f1116;
   /* Marketing surfaces: square, print-like — the AI default is round and
-     glowing, we go the other way. (Terminal keeps its own metrics.) */
-  --radius: 3px;
+     glowing, we go the other way. Dead square since the neo-brutalist pass.
+     (Terminal squares its own hard-coded radii; circles stay circles.) */
+  --radius: 0;
   /* Neo-brutalist accents — hard offset shadows, no blur, pure black alpha.
      Marketing surfaces only; the terminal stays flat and dense. */
   --shadow-hard: 4px 4px 0 rgba(0, 0, 0, 0.55);

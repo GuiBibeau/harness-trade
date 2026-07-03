@@ -116,7 +116,7 @@ export function chip(label: string, tone: string = C.muted): Record<string, unkn
     "div",
     {
       border: `1px solid ${C.line}`,
-      borderRadius: "4px",
+      borderRadius: "0",
       padding: "10px 18px",
       fontSize: "22px",
       fontWeight: 700,
