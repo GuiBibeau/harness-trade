@@ -16,7 +16,7 @@
       "name": "trader-ralph-portal",
       "version": "0.1.0",
       "dependencies": {
-        "@ellipsis-labs/rise": "^0.4.27",
+        "@ellipsis-labs/rise": "^0.4.60",
         "@privy-io/js-sdk-core": "^0.67.0",
         "@resvg/resvg-js": "^2.6.2",
         "@solana/web3.js": "^1.98.4",
@@ -60,7 +60,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.3.15", "", { "os": "win32", "cpu": "x64" }, "sha512-kDZr/hgg+igo5Emi0LcjlgfkoGZtgIpJKhnvKTRmMBv6FF/3SDyEV4khBwqNebZIyMZTzvpca9sQNSXJ39pI2A=="],
 
-    "@ellipsis-labs/rise": ["@ellipsis-labs/rise@0.4.27", "", { "dependencies": { "@noble/hashes": "^2.0.1", "@scure/base": "^2.0.0", "@solana/kit": "^4.0.0", "fzstd": "^0.1.1", "xstate": "^5.28.0", "zod": "^4.3.6", "zustand": "^5.0.12" } }, "sha512-XzqwTCJjdeVu9SErTInTWPNUOzgu9EhMYBr+UQF1Bq8SM2bmjcj/fGuhD078BEU5N2U75c3BByDC9o/0UA4czg=="],
+    "@ellipsis-labs/rise": ["@ellipsis-labs/rise@0.4.60", "", { "dependencies": { "@noble/hashes": "^2.0.1", "@scure/base": "^2.0.0", "@solana/kit": "^4.0.0", "fzstd": "^0.1.1", "xstate": "^5.28.0", "zod": "4.4.3", "zustand": "^5.0.12" } }, "sha512-1yYEO4aAt06+eeOHAjJdkU6McWDfaL+wcwmhb9QYkVd0HUdnMjRfCUcCb5LY+vfAygIhCA+aY96+9SW/MUE08g=="],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.25.12", "", { "os": "aix", "cpu": "ppc64" }, "sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA=="],
 

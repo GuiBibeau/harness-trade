@@ -59,7 +59,7 @@
     readPrivyConfig,
     sendPrivyEmailCode,
     signAndSendSolanaTransaction,
-    signSolanaMessage,
+    signSolanaTransaction,
     type PrivyAuthState,
   } from "$lib/privy-auth";
   import {
@@ -95,7 +95,6 @@
     type TriggerOrder,
   } from "$lib/spot";
   import {
-    activatePhoenixInvite,
     activatePhoenixReferral,
     buildCancelAllIxs,
     buildDepositIxs,
@@ -1530,6 +1529,71 @@
     return configured || SOLANA_MAINNET_RPC;
   }
 
+  type TransactionSummary = {
+    title: string;
+    details: string[];
+    feePayer?: string;
+    programs?: string[];
+  };
+
+  async function simulateConfirmAndSend(
+    transaction: VersionedTransaction,
+    connection: Connection,
+    summary: TransactionSummary,
+    latestBlockhash?: {
+      blockhash: string;
+      lastValidBlockHeight: number;
+    },
+  ): Promise<string> {
+    statusMessage = "simulating-transaction";
+    const simulation = await connection.simulateTransaction(transaction, {
+      sigVerify: false,
+    });
+    if (simulation.value.err) {
+      throw new Error(
+        `simulation-failed-${JSON.stringify(simulation.value.err)}`,
+      );
+    }
+
+    const feePayer =
+      summary.feePayer ??
+      transaction.message.staticAccountKeys[0]?.toBase58() ??
+      "unknown";
+    const programs = summary.programs?.length
+      ? summary.programs.join(", ")
+      : "transaction-built route";
+    const ok = window.confirm(
+      [
+        summary.title,
+        "",
+        ...summary.details,
+        `Fee payer: ${feePayer}`,
+        `Cluster: Solana mainnet`,
+        `Programs: ${programs}`,
+        `Simulation: passed${simulation.value.unitsConsumed ? ` (${simulation.value.unitsConsumed} CU)` : ""}`,
+        "",
+        "Continue to wallet signature?",
+      ].join("\n"),
+    );
+    if (!ok) throw new Error("signature-cancelled");
+
+    statusMessage = "awaiting-wallet-signature";
+    const signature = await signAndSendSolanaTransaction(
+      transaction,
+      connection,
+    );
+    statusMessage = "confirming-transaction";
+    if (latestBlockhash) {
+      await connection.confirmTransaction(
+        { signature, ...latestBlockhash },
+        "confirmed",
+      );
+    } else {
+      await connection.confirmTransaction(signature, "confirmed");
+    }
+    return signature;
+  }
+
   // ── Add funds (receive + Jupiter swap) ────────────────────────────
   function openFunds(): void {
     fundsOpen = true;
@@ -1591,6 +1655,7 @@
   async function executeSwap(): Promise<void> {
     const address = $privyAuth.walletAddress;
     if (!swapQuote || !address || swapStatus === "swapping") return;
+    const amount = swapQuote.inSol;
     swapStatus = "swapping";
     swapError = "";
     try {
@@ -1600,7 +1665,15 @@
       for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
       const transaction = VersionedTransaction.deserialize(bytes);
       const connection = new Connection(solanaRpcUrl(), "confirmed");
-      swapSignature = await signAndSendSolanaTransaction(transaction, connection);
+      swapSignature = await simulateConfirmAndSend(transaction, connection, {
+        title: "Swap SOL to USDC",
+        details: [
+          `Spend: ${formatNumber(amount, 4)} SOL`,
+          `Receive est.: ${formatNumber(swapQuote.outUsdc, 2)} USDC`,
+          `Price impact: ${(swapQuote.priceImpactPct * 100).toFixed(2)}%`,
+        ],
+        feePayer: address,
+      });
       swapStatus = "done";
       statusMessage = "swap-submitted";
       void refreshWalletBalance(address);
@@ -1792,7 +1865,8 @@
 
   async function executeSpotSwap(): Promise<void> {
     const address = $privyAuth.walletAddress;
-    if (!spotQuote || !address || spotBusy || walletScreen.flagged) return;
+    const asset = spotAsset;
+    if (!asset || !spotQuote || !address || spotBusy || walletScreen.flagged) return;
     // Freshness gate: never execute a quote older than 30s — re-quote instead.
     if (Date.now() - spotQuotedAt > 30_000) {
       scheduleSpotQuote();
@@ -1807,16 +1881,25 @@
       for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
       const transaction = VersionedTransaction.deserialize(bytes);
       const connection = new Connection(solanaRpcUrl(), "confirmed");
-      spotSignature = await signAndSendSolanaTransaction(transaction, connection);
+      spotSignature = await simulateConfirmAndSend(transaction, connection, {
+        title: `${spotSide === "buy" ? "Buy" : "Sell"} ${asset.symbol}`,
+        details: [
+          `Venue: Jupiter spot route`,
+          `Amount: ${formatNumber(Number(spotAmount), 4)}`,
+          `Receive est.: ${formatNumber(spotQuote.outUi, spotSide === "buy" ? 4 : 2)} ${spotSide === "buy" ? asset.symbol : "USDC"}`,
+          `Price impact: ${(spotQuote.priceImpactPct * 100).toFixed(2)}%`,
+        ],
+        feePayer: address,
+      });
       statusMessage = "spot-swap-submitted";
       noteTrade({
         ts: Date.now(),
         venue: "spot",
-        symbol: spotAsset?.symbol ?? "?",
+        symbol: asset.symbol,
         action: spotSide,
         notionalUsd:
           spotSide === "buy" ? Number(spotAmount) || null : (spotQuote?.outUi ?? null),
-        price: spotAsset?.price ?? null,
+        price: asset.price,
         leverage: null,
         signature: spotSignature,
       });
@@ -1842,7 +1925,7 @@
   }
 
   // ── Phoenix onboarding ────────────────────────────────────────────
-  const ONBOARD_KEY = "trader-ralph-terminal/phx-referral/v1";
+  const ONBOARD_KEY = "trader-ralph-terminal/phx-referral/v2";
 
   async function ensurePhoenixOnboarding(authority: string): Promise<void> {
     if (!authority || onboardedAddress === authority) return;
@@ -1850,28 +1933,20 @@
     try {
       const access = await checkPhoenixAccess(authority);
       phoenixWhitelisted = access.whitelisted;
-      // No manual invite step: our referral code doubles as the invite —
-      // activate it automatically for first-time wallets.
-      if (!access.whitelisted) {
-        const activated = await activatePhoenixInvite(
-          authority,
-          PHOENIX_REFERRAL_CODE,
-        );
-        if (activated.ok) {
-          phoenixWhitelisted = true;
-          statusMessage = "phoenix-access-activated";
-        }
-      }
     } catch {
       phoenixWhitelisted = null;
     }
-    // Referral attribution: once per wallet, best-effort, never blocks UX.
+    // Referral onboarding: once per wallet, best-effort, never blocks market reads.
     try {
       const done = JSON.parse(
         window.localStorage.getItem(ONBOARD_KEY) ?? "[]",
       ) as string[];
       if (done.includes(authority)) return;
-      const result = await activatePhoenixReferral(authority, signSolanaMessage);
+      const result = await activatePhoenixReferral(
+        authority,
+        solanaRpcUrl(),
+        signSolanaTransaction,
+      );
       if (
         result.ok ||
         /already|exist|self/i.test(result.message)
@@ -1880,7 +1955,12 @@
           ONBOARD_KEY,
           JSON.stringify([...done, authority]),
         );
-        if (result.ok) statusMessage = "phoenix-referral-attributed";
+        if (result.ok) {
+          phoenixWhitelisted = true;
+          statusMessage = result.signature
+            ? "phoenix-referral-activated"
+            : "phoenix-referral-active";
+        }
       }
     } catch {
       // wallet declined the signature or transient failure — retry next visit
@@ -1900,13 +1980,28 @@
 
   async function signAndSendPhoenixIxs(
     instructions: import("@solana/web3.js").TransactionInstruction[],
+    summary: TransactionSummary,
   ): Promise<string> {
-    const { transaction, connection } = await buildSignableTransaction(
-      solanaRpcUrl(),
-      phoenixAuthority,
-      instructions,
+    const { transaction, connection, latestBlockhash } =
+      await buildSignableTransaction(
+        solanaRpcUrl(),
+        phoenixAuthority,
+        instructions,
+      );
+    return simulateConfirmAndSend(
+      transaction,
+      connection,
+      {
+        ...summary,
+        feePayer: phoenixAuthority,
+        programs: [
+          ...new Set(
+            instructions.map((instruction) => instruction.programId.toBase58()),
+          ),
+        ],
+      },
+      latestBlockhash,
     );
-    return signAndSendSolanaTransaction(transaction, connection);
   }
 
   async function submitPhoenixOrder(): Promise<void> {
@@ -1954,10 +2049,22 @@
         takeProfitPrice,
         stopLossPrice,
       });
-      lastTradeSignature = await signAndSendPhoenixIxs([
-        ...registerIxs,
-        ...plan.instructions,
-      ]);
+      lastTradeSignature = await signAndSendPhoenixIxs(
+        [...registerIxs, ...plan.instructions],
+        {
+          title: `${tradeSide === "buy" ? "Long" : "Short"} ${selectedSymbol}-PERP`,
+          details: [
+            `Venue: Phoenix Perps`,
+            `Order: ${tradeType}`,
+            `Notional: $${formatNumber(tradePreview.notionalUsd, 2)}`,
+            `Margin: $${formatNumber(tradePreview.notionalUsd / tradeLeverage, 2)}`,
+            `Entry ref.: ${formatPrice(refPrice)}`,
+            `Leverage: ${tradeLeverage}x`,
+            ...(takeProfitPrice ? [`Take profit: ${formatPrice(takeProfitPrice)}`] : []),
+            ...(stopLossPrice ? [`Stop loss: ${formatPrice(stopLossPrice)}`] : []),
+          ],
+        },
+      );
       statusMessage = "phoenix-order-submitted";
       noteTrade({
         ts: Date.now(),
@@ -1992,7 +2099,14 @@
         quantity: Math.abs(size),
         reduceOnly: true,
       });
-      lastTradeSignature = await signAndSendPhoenixIxs(plan.instructions);
+      lastTradeSignature = await signAndSendPhoenixIxs(plan.instructions, {
+        title: `Close ${symbol}-PERP`,
+        details: [
+          `Venue: Phoenix Perps`,
+          `Reduce-only market order`,
+          `Size: ${formatNumber(Math.abs(size), 6)} ${symbol}`,
+        ],
+      });
       statusMessage = "phoenix-position-close-submitted";
       noteTrade({
         ts: Date.now(),
@@ -2039,7 +2153,13 @@
     phoenixActionError = "";
     try {
       const instructions = await buildCancelAllIxs(phoenixAuthority, symbol, side);
-      lastTradeSignature = await signAndSendPhoenixIxs(instructions);
+      lastTradeSignature = await signAndSendPhoenixIxs(instructions, {
+        title: `Cancel ${symbol}-PERP orders`,
+        details: [
+          `Venue: Phoenix Perps`,
+          `Side: ${side === "bid" ? "bids" : "asks"}`,
+        ],
+      });
       statusMessage = "phoenix-cancel-submitted";
       void refreshPhoenixTrader();
     } catch (error) {
@@ -2066,10 +2186,19 @@
         direction === "deposit"
           ? await buildDepositIxs(phoenixAuthority, amount)
           : await buildWithdrawIxs(phoenixAuthority, amount);
-      collateralSignature = await signAndSendPhoenixIxs([
-        ...(direction === "deposit" ? registerIxs : []),
-        ...instructions,
-      ]);
+      collateralSignature = await signAndSendPhoenixIxs(
+        [...(direction === "deposit" ? registerIxs : []), ...instructions],
+        {
+          title: `${direction === "deposit" ? "Deposit to" : "Withdraw from"} Phoenix`,
+          details: [
+            `Venue: Phoenix Perps`,
+            `Amount: ${formatNumber(amount, 2)} USDC`,
+            direction === "withdraw"
+              ? "Withdrawals settle through the Phoenix withdraw queue"
+              : "Funds move from wallet USDC into Phoenix margin",
+          ],
+        },
+      );
       statusMessage = `phoenix-${direction}-submitted`;
       depositAmount = "";
       withdrawAmount = "";
@@ -2934,9 +3063,18 @@
             };
       const { transaction } = await createTriggerOrder({ maker: address, ...params });
       const connection = new Connection(solanaRpcUrl(), "confirmed");
-      spotSignature = await signAndSendSolanaTransaction(
+      spotSignature = await simulateConfirmAndSend(
         deserializeBase64Tx(transaction),
         connection,
+        {
+          title: `Place limit ${spotSide} ${spotAsset.symbol}`,
+          details: [
+            `Venue: Jupiter Trigger`,
+            `Limit price: ${formatPrice(limit)}`,
+            `Notional: $${formatNumber(spotSide === "buy" ? amount : amount * limit, 2)}`,
+          ],
+          feePayer: address,
+        },
       );
       statusMessage = "spot-limit-placed";
       noteTrade({
@@ -2965,7 +3103,15 @@
     try {
       const transaction = await cancelTriggerOrder(address, orderKey);
       const connection = new Connection(solanaRpcUrl(), "confirmed");
-      await signAndSendSolanaTransaction(deserializeBase64Tx(transaction), connection);
+      await simulateConfirmAndSend(
+        deserializeBase64Tx(transaction),
+        connection,
+        {
+          title: "Cancel spot limit order",
+          details: [`Venue: Jupiter Trigger`, `Order: ${shortAddress(orderKey)}`],
+          feePayer: address,
+        },
+      );
       triggerOrders = triggerOrders.filter((order) => order.orderKey !== orderKey);
       void refreshTriggerOrders();
     } catch (error) {

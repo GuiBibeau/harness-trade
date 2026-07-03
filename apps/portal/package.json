@@ -11,7 +11,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@ellipsis-labs/rise": "^0.4.27",
+    "@ellipsis-labs/rise": "^0.4.60",
     "@privy-io/js-sdk-core": "^0.67.0",
     "@resvg/resvg-js": "^2.6.2",
     "@solana/web3.js": "^1.98.4",
