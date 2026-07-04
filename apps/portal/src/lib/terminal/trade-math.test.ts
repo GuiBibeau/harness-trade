@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { DepthLevel, PhoenixMarketConfig } from "$lib/phoenix-market-data";
-import type { PhoenixPosition } from "$lib/phoenix-trade";
+import type { PhoenixOpenOrder, PhoenixPosition } from "$lib/phoenix-trade";
 import {
   buildTradePreview,
   clampLeverage,
   enrichPosition,
   fmtTriggerPrice,
   liqDistancePct,
+  orderCancelKey,
   riskNotional,
   SL_CHIP_PCTS,
   TP_CHIP_PCTS,
@@ -370,5 +371,27 @@ describe("TP/SL chip presets", () => {
   test("hold the shipped percentages", () => {
     expect(TP_CHIP_PCTS).toEqual([2, 5, 10]);
     expect(SL_CHIP_PCTS).toEqual([1, 2, 5]);
+  });
+});
+
+describe("orderCancelKey", () => {
+  const order: PhoenixOpenOrder = {
+    symbol: "SOL",
+    side: "bid",
+    price: 100,
+    remaining: 1,
+    orderSequenceNumber: "123456789",
+    isStopLoss: false,
+    isStopLossDirection: false,
+  };
+
+  test("keys a resting order by its sequence number", () => {
+    expect(orderCancelKey(order)).toBe("cancel:SOL:bid:123456789");
+  });
+
+  test("collapses stop-loss rows onto the shared sl slot", () => {
+    expect(orderCancelKey({ ...order, side: "ask", isStopLoss: true })).toBe(
+      "cancel:SOL:ask:sl",
+    );
   });
 });

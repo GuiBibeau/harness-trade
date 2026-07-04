@@ -2,7 +2,7 @@
 // is called per tick from the terminal page's `$:` statements — keep flat
 // positional args and zero component state.
 import type { DepthLevel, PhoenixMarketConfig } from "$lib/phoenix-market-data";
-import type { PhoenixPosition } from "$lib/phoenix-trade";
+import type { PhoenixOpenOrder, PhoenixPosition } from "$lib/phoenix-trade";
 
 export type TradePreview = {
   notionalUsd: number;
@@ -159,4 +159,10 @@ export function triggerPriceForPct(
         ? 1 - pct / 100
         : 1 + pct / 100;
   return ref * factor;
+}
+
+// Busy key for one order row — finer than the side-wide `cancel:SYM:SIDE`
+// so cancelling one order never greys out its neighbours.
+export function orderCancelKey(order: PhoenixOpenOrder): string {
+  return `cancel:${order.symbol}:${order.side}:${order.isStopLoss ? "sl" : order.orderSequenceNumber}`;
 }

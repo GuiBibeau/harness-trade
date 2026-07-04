@@ -5,13 +5,27 @@
   import AiReadLine from "./components/AiReadLine.svelte";
   import AlertsModal from "./components/AlertsModal.svelte";
   import AuthModal from "./components/AuthModal.svelte";
+  import BookLadder from "./components/BookLadder.svelte";
   import CheatSheetModal from "./components/CheatSheetModal.svelte";
   import CommandPalette from "./components/CommandPalette.svelte";
   import DragHead from "./components/DragHead.svelte";
+  import EventsPanel from "./components/EventsPanel.svelte";
+  import FundsModal from "./components/FundsModal.svelte";
+  import JournalPanel from "./components/JournalPanel.svelte";
   import MacroPanel from "./components/MacroPanel.svelte";
-  import NewsMarquee from "./components/NewsMarquee.svelte";
-  import Spark from "./components/Spark.svelte";
+  import MonitorPanel from "./components/MonitorPanel.svelte";
+  import PerpDeskPanel from "./components/PerpDeskPanel.svelte";
+  import PhoenixMarketsPanel from "./components/PhoenixMarketsPanel.svelte";
+  import ScreenerPanel from "./components/ScreenerPanel.svelte";
+  import SpotMarketsPanel from "./components/SpotMarketsPanel.svelte";
+  import SpotTicketForm from "./components/SpotTicketForm.svelte";
+  import StatusLine from "./components/StatusLine.svelte";
+  import Tape from "./components/Tape.svelte";
+  import TicketForm from "./components/TicketForm.svelte";
+  import TickerRail from "./components/TickerRail.svelte";
   import ToastStack from "./components/ToastStack.svelte";
+  import Topbar from "./components/Topbar.svelte";
+  import WatchlistPanel from "./components/WatchlistPanel.svelte";
   import {
     aiDisabled,
     aiEventRead,
@@ -26,11 +40,7 @@
     type AiRead,
   } from "$lib/ai";
   import { track } from "$lib/telemetry";
-  import {
-    type Alert,
-    alertsStore,
-    headlineMatches,
-  } from "$lib/terminal/alerts";
+  import { type Alert, alertsStore } from "$lib/terminal/alerts";
   import { buildChartLineSpecs } from "$lib/terminal/chart-lines";
   import { parseTerminalDeepLink } from "$lib/terminal/deep-link";
   import {
@@ -43,17 +53,11 @@
     aiErr,
     humanizeBalanceError,
     shortAddress,
-    shortEmail,
     walletFundsLabel,
-    walletStatusText,
   } from "$lib/terminal/account-format";
   import {
     BOOK_LADDER_LEVELS,
     BOOK_LADDER_LEVELS_STACKED,
-    bookLevelNotional,
-    bookLevelTotalNotional,
-    depthWidth,
-    formatBookPrice,
     maxBookNotional,
   } from "$lib/terminal/book";
   import {
@@ -70,12 +74,8 @@
     parsePrefs,
     persistPrefs,
     PREFS_STORAGE_KEY,
-    SECTION_LINKS,
   } from "$lib/terminal/prefs";
   import {
-    buildMonitorRows,
-    buildScreenRows,
-    buildWatchRows,
     disconnectedPanel,
     disconnectedRows,
     emptyMarketStats,
@@ -142,16 +142,14 @@
   } from "$lib/privy-auth";
   import {
     fetchUsdcBalance,
-    getJupiterQuote,
     getJupiterSwapTransaction,
     type JupiterQuote,
   } from "$lib/funding";
-  import { BrandMark, OpenBetaBanner } from "@trader-ralph/ui";
+  import { OpenBetaBanner } from "@trader-ralph/ui";
   import { colors } from "@trader-ralph/ui/tokens";
   import {
     clearJournal,
     entriesToday,
-    journalToCsv,
     loadJournal,
     recordTrade,
     type JournalEntry,
@@ -163,15 +161,12 @@
     fetchSpotAssets,
     fetchTriggerOrders,
     fetchSpotCandles,
-    getSpotQuote,
     getSpotSwapTransaction,
     spotIntervalFor,
     tokenToAtoms,
-    triggerOrderView,
     usdcToAtoms,
     USDC_MINT as SPOT_USDC_MINT,
     type SpotAsset,
-    type SpotQuote,
     type TriggerOrder,
   } from "$lib/spot";
   import {
@@ -195,7 +190,6 @@
     type PhoenixTraderState,
   } from "$lib/phoenix-trade";
   import { Connection, VersionedTransaction } from "@solana/web3.js";
-  import QRCode from "qrcode";
   import {
     formatAge,
     formatNumber,
@@ -205,16 +199,14 @@
     isRecord,
   } from "$lib/utils";
   import {
-    buildTradePreview,
     clampLeverage,
     enrichPosition,
     fmtTriggerPrice,
     liqDistancePct,
-    riskNotional,
-    SL_CHIP_PCTS,
-    TP_CHIP_PCTS,
-    triggerPriceForPct,
+    orderCancelKey,
   } from "$lib/terminal/trade-math";
+  import { createPerpTicket } from "$lib/terminal/perp-ticket";
+  import { createSpotTicket } from "$lib/terminal/spot-ticket";
   import {
     computeMarketChange,
     DEFAULT_VISIBLE_CANDLES,
@@ -292,9 +284,6 @@
     }
   }
 
-  let monitorSort: "volume" | "change" | "symbol" = "volume";
-  $: monitorRows = buildMonitorRows(markets, marketMids, dailyStats, monitorSort);
-
   function chooseMonitorRow(symbol: string): void {
     if (tradeMode !== "perps") setTradeMode("perps", false);
     if (symbol !== selectedSymbol) void switchPhoenixMarket(symbol);
@@ -314,7 +303,6 @@
   let oilPanel: DataPanel = disconnectedPanel("Edge energy source required");
   let authOpen = false;
   let logoutBusy = false;
-  let accountMenuOpen = false;
   let walletBalanceAddress = "";
   let walletBalanceText = "-- SOL";
   let walletBalanceStatus: "idle" | "loading" | "ready" | "error" = "idle";
@@ -361,20 +349,12 @@
   let collateralError = "";
   let collateralSignature = "";
 
-  // Add-funds (receive + swap) flow.
+  // Add-funds (receive + swap) flow. QR + swap-quote state live in
+  // components/FundsModal.svelte; the page keeps the open flag + tab
+  // (deep-link `?fund=` and openPhoenixFunding pre-set them).
   let fundsOpen = false;
-  let fundsQr = "";
   let fundsTab: "receive" | "convert" | "phoenix" = "receive";
-  let swapSol = "";
-  let swapQuote: JupiterQuote | null = null;
-  let swapStatus: "idle" | "quoting" | "quoted" | "swapping" | "done" | "error" =
-    "idle";
-  let swapError = "";
-  let swapSignature = "";
-  let swapQuoteTimer: ReturnType<typeof setTimeout> | null = null;
   let tradeOpen = false;
-  let tradeSide: "buy" | "sell" = "buy";
-  let tradeAmount = "25";
   let pendingBook: { bids: DepthLevel[]; asks: DepthLevel[]; mid: number | null } | null =
     null;
   let bookFrame = 0;
@@ -385,14 +365,27 @@
   let macroRead: AiRead = IDLE_READ;
   let fundingRead: AiRead = IDLE_READ;
   let scannerRead: AiRead = IDLE_READ;
-  let tradeLeverage = 2;
-  let tradeType: "market" | "limit" = "market";
-  let tradeLimitPrice = "";
-  let tradeTakeProfit = "";
-  let tradeStopLoss = "";
-  // Reduce-only: sell into an existing position instead of opening a second
-  // isolated one with fresh margin. Only offered while a position exists.
-  let tradeReduceOnly = false;
+  // Perp ticket state (side/size/risk/leverage/type/limit/TP/SL/sizing +
+  // reduce-only) and its derived previews live in $lib/terminal/perp-ticket.
+  // The page feeds hot inputs through perpTicket.setInputs below and keeps
+  // the signing pipeline; components arrive in a later stage.
+  const perpTicket = createPerpTicket();
+  const {
+    tradeSide,
+    sizingMode,
+    tradeAmount,
+    tradeRiskUsd,
+    tradeLeverage,
+    tradeType,
+    tradeLimitPrice,
+    tradeTakeProfit,
+    tradeStopLoss,
+    tradeReduceOnly,
+    ticketActive,
+    tradePreview,
+    requiredMarginUsd,
+    needsPhoenixFunding,
+  } = perpTicket;
   // Right-rail tab: order book vs inline trade ticket.
   // Trade is the default right-rail mode — trading is the product; the
   // book is one tab away. Deep links (?tab=book) still override.
@@ -412,21 +405,35 @@
   let tradeMode: "perps" | "spot" = "perps";
   let spotAssets: SpotAsset[] = [];
   let spotAsset: SpotAsset | null = null;
-  let spotSearch = "";
-  let spotSide: "buy" | "sell" = "buy";
-  let spotAmount = "25";
-  let spotQuote: SpotQuote | null = null;
-  let spotQuoteStatus: "idle" | "quoting" | "quoted" | "error" = "idle";
-  let spotQuoteError = "";
   let spotBusy = false;
   let spotSignature = "";
-  let spotQuoteTimer: ReturnType<typeof setTimeout> | null = null;
   let spotChartTimer: ReturnType<typeof setInterval> | null = null;
-  // Generation tokens: invalidate in-flight quote/chart responses when the
-  // user changes asset/side/amount/timeframe (out-of-order fetch protection).
-  let spotQuoteSeq = 0;
-  let spotQuotedAt = 0;
+  // Generation token: invalidate in-flight chart responses when the user
+  // changes asset/timeframe (out-of-order fetch protection). The quote-side
+  // twin lives inside the spot ticket store.
   let spotChartSeq = 0;
+  // Spot ticket state (side/amount/order-type/limit) + the Jupiter quote
+  // engine (debounce + generation tokens) live in $lib/terminal/spot-ticket.
+  // The store reads the selected asset live and clears the last swap
+  // signature whenever pricing is invalidated; the money paths
+  // (executeSpotSwap / submitSpotLimitOrder) stay in this file.
+  const spotTicket = createSpotTicket({
+    getAsset: () => spotAsset,
+    onQuoteInvalidated: () => {
+      spotSignature = "";
+    },
+  });
+  const {
+    spotSide,
+    spotAmount,
+    spotOrderType,
+    spotLimitPrice,
+    spotQuote,
+    spotQuoteStatus,
+    spotQuoteError,
+  } = spotTicket;
+  const scheduleSpotQuote = spotTicket.scheduleQuote;
+  const flipSpotSide = spotTicket.flipSide;
   let spotChartPoints: MarketPoint[] = [];
   let tokenBalances: Record<string, number> = {};
   let pendingTradeMode: "spot" | null = null;
@@ -434,9 +441,6 @@
 
   // Watchlist: starred symbols (uppercase), persisted in prefs.
   let watchlist: string[] = [];
-  // Risk-based sizing: size the perp ticket from stop distance, like a desk.
-  let sizingMode: "usd" | "risk" = "usd";
-  let tradeRiskUsd = "25";
   // Screener controls (persisted).
   let screenSort: "movers" | "volume" | "cap" = "movers";
   let screenHub: "all" | "crypto" | "equities" | "pre-ipo" = "all";
@@ -447,8 +451,6 @@
   let briefKey = "";
   let recapKey = 0;
   // Spot limit orders (Jupiter Trigger).
-  let spotOrderType: "market" | "limit" = "market";
-  let spotLimitPrice = "";
   let triggerOrders: TriggerOrder[] = [];
   let triggerBusy = false;
   let triggerWallet = "";
@@ -508,15 +510,6 @@
     walletBalanceStatus,
     totalFundsText,
   );
-  $: connectLabel =
-    $privyAuth.status === "loading"
-      ? "Connecting…"
-      : $privyAuth.status === "error"
-        ? "Retry connect"
-        : !$privyAuth.configured
-          ? "Auth unavailable"
-          : "Connect account";
-  $: walletStatusLabel = walletStatusText($privyAuth.walletStatus);
   $: normalizedWalletAddress = $privyAuth.walletAddress ?? "";
   $: if (normalizedWalletAddress !== walletBalanceAddress) {
     walletBalanceAddress = normalizedWalletAddress;
@@ -537,15 +530,6 @@
   }
   $: if (phoenixAuthority) void ensurePhoenixOnboarding(phoenixAuthority);
   $: if (phoenixAuthority) void refreshTokenBalances(phoenixAuthority);
-  $: spotFiltered = spotSearch.trim()
-    ? spotAssets.filter((asset) => {
-        const query = spotSearch.trim().toLowerCase();
-        return (
-          asset.symbol.toLowerCase().includes(query) ||
-          asset.name.toLowerCase().includes(query)
-        );
-      })
-    : spotAssets;
   $: spotHolding = spotAsset ? tokenBalances[spotAsset.mint] ?? 0 : 0;
   $: alertsStore.check(latestPrice, selectedSymbol);
   $: spread = asks[0] && bids[0] ? asks[0].price - bids[0].price : 0;
@@ -602,54 +586,45 @@
   $: statsLoading = marketStats === null;
   $: bookLoading = asks.length === 0 || bids.length === 0;
   $: updatedLoading = lastMarketUpdate === null;
-  // Perp ticket preview/AI reads run only when a perp ticket is showing.
-  // Desktop stacks the ticket permanently; narrow viewports gate on the tab.
-  $: ticketActive =
-    tradeOpen ||
-    (tradeMode === "perps" && (stackedBook || bookTab === "trade"));
-  $: tradePreview = ticketActive
-    ? buildTradePreview(
-        tradeSide,
-        effectiveTradeAmount,
-        tradeLeverage,
-        tradeType,
-        tradeLimitPrice,
-        asks,
-        bids,
-        latestPrice,
-        fundingPercent,
-      )
-    : null;
-  // Funding gate: isolated orders draw margin from the parent Phoenix
-  // account, so it must hold enough collateral before placing a trade.
-  // Reduce-only orders transfer no margin, so they never need funding.
-  $: requiredMarginUsd =
-    tradePreview && !tradeReduceOnly
-      ? tradePreview.notionalUsd / tradeLeverage
-      : 0;
+  // Grouped ticker models (new identities per tick — accepted; the same
+  // bindings re-evaluated per tick before the TickerRail split, and the
+  // leaf component now scopes the DOM update).
+  $: tickerPerp = {
+    price: chartPrice,
+    change: change24h,
+    stats: marketStats,
+    spreadBps,
+    fundingPercent,
+    basisBps: perpBasisBps,
+    loading: {
+      price: priceLoading,
+      stats: statsLoading,
+      book: bookLoading,
+      updated: updatedLoading,
+    },
+  };
+  $: tickerSpot = { asset: spotAsset, basisBps: spotBasisBps };
   $: phoenixCollateral = phoenixTrader?.collateralUsd ?? 0;
   $: phoenixStateKnown = phoenixTrader !== null;
-  // "Deposit first" is a strong claim: it may only come from a
-  // this-session on-chain read of free collateral (never the lagging
-  // indexer, never a device snapshot), and the shortfall must hold for a
-  // beat — transitional refreshes while funds move between subaccounts
-  // can never flash it.
-  $: fundingShortfallRaw =
-    Boolean(phoenixAuthority) &&
-    phoenixStateKnown &&
-    phoenixTrader?.chainVerified === true &&
-    requiredMarginUsd > 0 &&
-    phoenixCollateral + 0.01 < requiredMarginUsd;
-  let fundingShortfallSince: number | null = null;
-  $: if (!fundingShortfallRaw) {
-    fundingShortfallSince = null;
-  } else if (fundingShortfallSince === null) {
-    fundingShortfallSince = Date.now();
-  }
-  $: needsPhoenixFunding =
-    fundingShortfallRaw &&
-    fundingShortfallSince !== null &&
-    nowMs - fundingShortfallSince >= 1_200;
+  // Perp ticket derivations (preview, funding gate, TP/SL analysis, risk
+  // sizing) live in $lib/terminal/perp-ticket — feed it the hot inputs
+  // (book, mark, funding), ticket visibility, the chain-first account
+  // snapshot, and the 1s clock for the funding-shortfall debounce.
+  $: perpTicket.setInputs({
+    asks,
+    bids,
+    latestPrice,
+    fundingPercent,
+    tradeOpen,
+    perpsMode: tradeMode === "perps",
+    stackedBook,
+    tradeTab: bookTab === "trade",
+    hasAuthority: Boolean(phoenixAuthority),
+    stateKnown: phoenixStateKnown,
+    chainVerified: phoenixTrader?.chainVerified === true,
+    collateralUsd: phoenixCollateral,
+  });
+  $: perpTicket.setNow(nowMs);
 
   // ── Ambient risk (Bloomberg posture) ───────────────────────────────
   // The trader API stopped shipping uPnL/liq per position; reconstruct
@@ -723,7 +698,7 @@
     null;
   // The checkbox only means something against a live position — drop it the
   // moment the position is gone (closed, or the ticket switched symbols).
-  $: if (!selectedPosition && tradeReduceOnly) tradeReduceOnly = false;
+  $: if (!selectedPosition && $tradeReduceOnly) $tradeReduceOnly = false;
   $: selectedLiqDistancePct =
     selectedPosition?.liquidationPrice != null && latestPrice
       ? (Math.abs(latestPrice - selectedPosition.liquidationPrice) /
@@ -731,72 +706,17 @@
         100
       : null;
 
-  // ── TP/SL selection ────────────────────────────────────────────────
-  // Chips quick-set trigger prices relative to the same reference price the
-  // submit validation uses; the inputs stay the source of truth so precise
-  // hand-entry still works. Wrong-side values are flagged as you type
-  // instead of failing at submit.
-  $: triggerRefPrice =
-    tradeType === "limit" && Number(tradeLimitPrice) > 0
-      ? Number(tradeLimitPrice)
-      : (tradePreview?.entry ?? latestPrice) || null;
-  $: tpValue = Number(tradeTakeProfit);
-  $: slValue = Number(tradeStopLoss);
-  $: tpSet = Number.isFinite(tpValue) && tpValue > 0;
-  $: slSet = Number.isFinite(slValue) && slValue > 0;
-  $: tpWrongSide =
-    tpSet && triggerRefPrice !== null
-      ? tradeSide === "buy"
-        ? tpValue <= triggerRefPrice
-        : tpValue >= triggerRefPrice
-      : false;
-  $: slWrongSide =
-    slSet && triggerRefPrice !== null
-      ? tradeSide === "buy"
-        ? slValue >= triggerRefPrice
-        : slValue <= triggerRefPrice
-      : false;
-  $: tpPct =
-    tpSet && triggerRefPrice
-      ? ((tpValue - triggerRefPrice) / triggerRefPrice) * 100
-      : null;
-  $: slPct =
-    slSet && triggerRefPrice
-      ? ((slValue - triggerRefPrice) / triggerRefPrice) * 100
-      : null;
-  $: tpPnlUsd =
-    tpPct !== null && tradePreview
-      ? tradePreview.notionalUsd * (tpPct / 100) * (tradeSide === "buy" ? 1 : -1)
-      : null;
-  $: slPnlUsd =
-    slPct !== null && tradePreview
-      ? tradePreview.notionalUsd * (slPct / 100) * (tradeSide === "buy" ? 1 : -1)
-      : null;
   // The ticket only blocks on ITS symbol's open — Close/Cancel stay live.
   $: orderBusyKey = `order:${selectedSymbol}`;
   $: orderBusy = phoenixBusyKeys.has(orderBusyKey);
   $: orderStageEntry = txStages[orderBusyKey] ?? null;
 
-  function setTakeProfitPct(pct: number): void {
-    if (!triggerRefPrice) return;
-    tradeTakeProfit = fmtTriggerPrice(
-      triggerPriceForPct(triggerRefPrice, tradeSide, pct, "tp"),
-    );
-  }
-
-  function setStopLossPct(pct: number): void {
-    if (!triggerRefPrice) return;
-    tradeStopLoss = fmtTriggerPrice(
-      triggerPriceForPct(triggerRefPrice, tradeSide, pct, "sl"),
-    );
-  }
-
   // ── Size presets ───────────────────────────────────────────────────
   // USD mode: % of free collateral × leverage; Max keeps the same $0.01
   // margin buffer the funding gate tolerates so a Max ticket can't flash
   // "Deposit first". Risk mode: % of account equity put at risk.
-  const SIZE_CHIP_PCTS = [10, 25, 50];
-  const RISK_CHIP_PCTS = [0.5, 1, 2];
+  // (The offered percentages live in TicketForm.svelte; the chip math and
+  // sizeSource tracking stay here so leverage re-follow keeps working.)
   // Chip-sized tickets re-follow leverage changes; hand-typed sizes never
   // move underneath the trader.
   let sizeSource: "chip" | "manual" = "manual";
@@ -807,26 +727,26 @@
       pct === "max"
         ? Math.max(0, phoenixCollateral - 0.01)
         : (pct / 100) * phoenixCollateral;
-    return margin * tradeLeverage;
+    return margin * $tradeLeverage;
   }
 
   function setSizeChip(pct: number | "max"): void {
-    tradeAmount = chipNotionalUsd(pct).toFixed(2);
+    $tradeAmount = chipNotionalUsd(pct).toFixed(2);
     sizeSource = "chip";
     sizeChipPct = pct;
   }
 
   function setRiskChip(pct: number): void {
-    tradeRiskUsd = ((pct / 100) * accountEquityUsd).toFixed(2);
+    $tradeRiskUsd = ((pct / 100) * accountEquityUsd).toFixed(2);
     sizeSource = "chip";
     // Risk chips don't depend on leverage — nothing to re-derive later.
     sizeChipPct = null;
   }
 
-  $: recomputeChipSize(tradeLeverage);
+  $: recomputeChipSize($tradeLeverage);
   function recomputeChipSize(_leverage: number): void {
-    if (sizeSource !== "chip" || sizeChipPct === null || sizingMode !== "usd") return;
-    tradeAmount = chipNotionalUsd(sizeChipPct).toFixed(2);
+    if (sizeSource !== "chip" || sizeChipPct === null || $sizingMode !== "usd") return;
+    $tradeAmount = chipNotionalUsd(sizeChipPct).toFixed(2);
   }
 
   // ── Keyboard: Enter submits, arrows step ───────────────────────────
@@ -834,17 +754,17 @@
   $: canSubmitPerp =
     Boolean(phoenixAuthority) &&
     phoenixStateKnown &&
-    !needsPhoenixFunding &&
+    !$needsPhoenixFunding &&
     !orderBusy &&
-    Boolean(tradePreview) &&
+    Boolean($tradePreview) &&
     !walletScreen.flagged;
   $: canSubmitSpot =
     Boolean(phoenixAuthority) &&
     !spotBusy &&
     !walletScreen.flagged &&
-    (spotOrderType === "limit"
-      ? Number(spotLimitPrice) > 0 && Number(spotAmount) > 0
-      : spotQuote !== null && spotQuoteStatus === "quoted");
+    ($spotOrderType === "limit"
+      ? Number($spotLimitPrice) > 0 && Number($spotAmount) > 0
+      : $spotQuote !== null && $spotQuoteStatus === "quoted");
 
   // ── Limit deviation gate ───────────────────────────────────────────
   // A dropped decimal (2450 instead of 245.0) would otherwise execute in
@@ -852,14 +772,14 @@
   // are a real tactic); >5% from mark arms a two-stage confirm; >25%
   // blocks outright. Same tiers on the spot limit ticket, against the
   // catalog price (spot has no live book, so no crossing tier there).
-  $: limitPriceValue = tradeType === "limit" ? Number(tradeLimitPrice) : 0;
+  $: limitPriceValue = $tradeType === "limit" ? Number($tradeLimitPrice) : 0;
   $: limitDeviationPct =
     limitPriceValue > 0 && latestPrice
       ? ((limitPriceValue - latestPrice) / latestPrice) * 100
       : null;
   $: limitCrossesBook =
     limitPriceValue > 0 &&
-    (tradeSide === "buy"
+    ($tradeSide === "buy"
       ? asks.length > 0 && limitPriceValue >= asks[0].price
       : bids.length > 0 && limitPriceValue <= bids[0].price);
   $: limitNeedsConfirm =
@@ -879,7 +799,7 @@
     void submitPhoenixOrder();
   }
 
-  $: spotLimitPriceValue = spotOrderType === "limit" ? Number(spotLimitPrice) : 0;
+  $: spotLimitPriceValue = $spotOrderType === "limit" ? Number($spotLimitPrice) : 0;
   $: spotLimitDeviationPct =
     spotLimitPriceValue > 0 && spotAsset?.price
       ? ((spotLimitPriceValue - spotAsset.price) / spotAsset.price) * 100
@@ -912,44 +832,12 @@
     if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
     event.preventDefault();
     if (!canSubmitSpot) return;
-    if (spotOrderType === "limit") onSpotLimitSubmitClick();
+    if ($spotOrderType === "limit") onSpotLimitSubmitClick();
     else void executeSpotSwap();
   }
 
-  // Arrow keys step numeric ticket inputs (Shift = ×10), clamped at zero.
-  // Price fields step by the formatBookPrice magnitude rule and re-format
-  // via fmtTriggerPrice so the string stays Number()-parseable; USD fields
-  // step $5. Writes back through a real input event so bind:value (and any
-  // oninput side effect, e.g. scheduleSpotQuote) fires.
-  function stepInput(
-    node: HTMLInputElement,
-    params: { kind: "usd" | "price" },
-  ): { update: (next: { kind: "usd" | "price" }) => void; destroy: () => void } {
-    let kind = params.kind;
-    function onKeydown(event: KeyboardEvent): void {
-      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-      event.preventDefault();
-      const current = Number(node.value);
-      const base = Number.isFinite(current) && current > 0 ? current : 0;
-      const unit =
-        kind === "usd" ? 5 : base >= 1_000 ? 1 : base >= 1 ? 0.01 : 0.0001;
-      const delta =
-        unit * (event.shiftKey ? 10 : 1) * (event.key === "ArrowUp" ? 1 : -1);
-      const next = Math.max(0, base + delta);
-      node.value =
-        kind === "price" ? fmtTriggerPrice(next) : String(Number(next.toFixed(2)));
-      node.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-    node.addEventListener("keydown", onKeydown);
-    return {
-      update(next: { kind: "usd" | "price" }) {
-        kind = next.kind;
-      },
-      destroy() {
-        node.removeEventListener("keydown", onKeydown);
-      },
-    };
-  }
+  // Arrow-key stepping on ticket inputs (use:stepInput) moved to
+  // $lib/terminal/step-input — TicketForm/SpotTicketForm consume it there.
 
   // ── Cross-venue twins: basis between the perp and its spot token ──
   $: spotTwin =
@@ -965,9 +853,6 @@
       ? ((spotPerpMid - spotAsset.price) / spotAsset.price) * 10_000
       : null;
 
-  // ── Watchlist rows: price from spot, fall back to perp mid; basis when both ──
-  $: watchRows = buildWatchRows(watchlist, spotAssets, marketMids, markets);
-
   // ── Account exposure / leverage (margin meter, deterministic) ──
   $: accountExposureUsd = (phoenixTrader?.positions ?? []).reduce(
     (sum, position) => sum + Math.abs(position.positionValue ?? 0),
@@ -977,26 +862,6 @@
     phoenixCollateral > 0 && accountExposureUsd > 0
       ? accountExposureUsd / phoenixCollateral
       : null;
-
-  // ── Risk-based sizing: notional from stop distance ──
-  $: riskEntryPrice =
-    tradeType === "limit" && Number(tradeLimitPrice) > 0
-      ? Number(tradeLimitPrice)
-      : (latestPrice ?? 0);
-  $: riskStopPrice = Number(tradeStopLoss);
-  $: riskNotionalUsd =
-    sizingMode === "risk"
-      ? riskNotional(Number(tradeRiskUsd), riskEntryPrice, riskStopPrice)
-      : null;
-  $: effectiveTradeAmount =
-    sizingMode === "risk"
-      ? riskNotionalUsd !== null
-        ? String(riskNotionalUsd)
-        : ""
-      : tradeAmount;
-
-  // ── Screener rows over the catalog ──
-  $: screenRows = buildScreenRows(spotAssets, screenHub, screenSort);
 
   // ── Journal-derived views + AI notes (facts computed, AI narrates) ──
   $: journalToday = entriesToday(journalEntries, Date.now());
@@ -1050,10 +915,10 @@
       watchlist,
       screenSort,
       screenHub,
-      sizingMode,
-      tradeAmount,
-      tradeRiskUsd,
-      tradeLeverage,
+      $sizingMode,
+      $tradeAmount,
+      $tradeRiskUsd,
+      $tradeLeverage,
     );
 
   onMount(() => {
@@ -1137,8 +1002,7 @@
       for (const timer of timers) window.clearInterval(timer);
       if (fundsPollTimer !== null) window.clearInterval(fundsPollTimer);
       if (copyResetTimer) clearTimeout(copyResetTimer);
-      if (swapQuoteTimer) clearTimeout(swapQuoteTimer);
-      if (spotQuoteTimer) clearTimeout(spotQuoteTimer);
+      spotTicket.dispose();
       if (spotChartTimer) clearInterval(spotChartTimer);
       lwChart?.remove();
       lwChart = null;
@@ -1192,9 +1056,9 @@
     // limit at 150 would cross the entire BTC book as taker. Clear them
     // (never re-anchor); size and leverage persist across the switch.
     if (symbol !== selectedSymbol) {
-      tradeLimitPrice = "";
-      tradeTakeProfit = "";
-      tradeStopLoss = "";
+      $tradeLimitPrice = "";
+      $tradeTakeProfit = "";
+      $tradeStopLoss = "";
       limitArmedUntil = 0;
     }
     phoenixStream?.close();
@@ -1440,23 +1304,6 @@
     walletScreen = await screenSolanaAddress(address);
   }
 
-  // News coded to the tape: filter the headline panel to the active
-  // market (toggleable), and track last-hour headline velocity for it.
-  let newsLinked = true;
-  $: activeNewsSymbol =
-    tradeMode === "spot" ? (spotAsset?.symbol ?? null) : selectedSymbol;
-  $: linkedNews =
-    newsLinked && activeNewsSymbol
-      ? news.filter((item) => headlineMatches(item.title, activeNewsSymbol))
-      : news;
-  $: headlineVelocity = activeNewsSymbol
-    ? news.filter(
-        (item) =>
-          headlineMatches(item.title, activeNewsSymbol) &&
-          nowMs - item.seenMs < 3_600_000,
-      ).length
-    : 0;
-
   // ── Draggable dashboard layout (store lives in $lib/terminal/layout) ──
   function loadLayout(): void {
     if (typeof window === "undefined") return;
@@ -1619,11 +1466,11 @@
         const match = markets.find((market) => market.symbol === intent.symbol);
         if (match) void switchPhoenixMarket(intent.symbol);
       }
-      tradeSide = intent.side;
-      tradeType = intent.orderType;
-      if (intent.sizeUsd != null) tradeAmount = String(intent.sizeUsd);
-      if (intent.leverage != null) tradeLeverage = clampLeverage(intent.leverage);
-      if (intent.limitPrice != null) tradeLimitPrice = String(intent.limitPrice);
+      $tradeSide = intent.side;
+      $tradeType = intent.orderType;
+      if (intent.sizeUsd != null) $tradeAmount = String(intent.sizeUsd);
+      if (intent.leverage != null) $tradeLeverage = clampLeverage(intent.leverage);
+      if (intent.limitPrice != null) $tradeLimitPrice = String(intent.limitPrice);
       if (intent.stopPercent != null) {
         // Convert a "1% stop" style command into a Phoenix SL trigger price.
         const ref = intent.limitPrice ?? latestPrice;
@@ -1632,7 +1479,7 @@
             intent.side === "buy"
               ? ref * (1 - intent.stopPercent / 100)
               : ref * (1 + intent.stopPercent / 100);
-          tradeStopLoss = sl.toFixed(4);
+          $tradeStopLoss = sl.toFixed(4);
         }
       }
       tradeOpen = true;
@@ -1849,92 +1696,36 @@
   }
 
   // ── Add funds (receive + Jupiter swap) ────────────────────────────
+  // QR generation + swap-quote state live in components/FundsModal.svelte;
+  // the swap SUBMIT stays here (signing plumbing: simulateConfirmAndSend).
   function openFunds(): void {
     fundsOpen = true;
     fundsTab = "receive";
-    resetSwap();
-    void generateFundsQr();
     if ($privyAuth.walletAddress) void refreshWalletBalance($privyAuth.walletAddress);
   }
 
-  async function generateFundsQr(): Promise<void> {
+  async function performSwap(quote: JupiterQuote): Promise<string> {
     const address = $privyAuth.walletAddress;
-    if (!address) {
-      fundsQr = "";
-      return;
-    }
-    try {
-      fundsQr = await QRCode.toString(address, {
-        type: "svg",
-        margin: 1,
-        errorCorrectionLevel: "M",
-        color: { dark: "#f5eff7", light: "#00000000" },
-      });
-    } catch {
-      fundsQr = "";
-    }
-  }
-
-  function resetSwap(): void {
-    swapSol = "";
-    swapQuote = null;
-    swapStatus = "idle";
-    swapError = "";
-    swapSignature = "";
-  }
-
-  function scheduleSwapQuote(): void {
-    if (swapQuoteTimer) clearTimeout(swapQuoteTimer);
-    swapSignature = "";
-    const amount = Number(swapSol);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      swapQuote = null;
-      swapStatus = "idle";
-      return;
-    }
-    swapStatus = "quoting";
-    swapQuoteTimer = setTimeout(() => void runSwapQuote(amount), 450);
-  }
-
-  async function runSwapQuote(amount: number): Promise<void> {
-    try {
-      swapQuote = await getJupiterQuote(amount);
-      swapStatus = "quoted";
-    } catch (error) {
-      swapStatus = "error";
-      swapError = error instanceof Error ? error.message : "quote-failed";
-    }
-  }
-
-  async function executeSwap(): Promise<void> {
-    const address = $privyAuth.walletAddress;
-    if (!swapQuote || !address || swapStatus === "swapping") return;
-    const amount = swapQuote.inSol;
-    swapStatus = "swapping";
-    swapError = "";
-    try {
-      const base64 = await getJupiterSwapTransaction(swapQuote.raw, address);
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-      const transaction = VersionedTransaction.deserialize(bytes);
-      const connection = new Connection(solanaRpcUrl(), "confirmed");
-      swapSignature = await simulateConfirmAndSend(transaction, connection, {
-        title: "Swap SOL to USDC",
-        details: [
-          `Spend: ${formatNumber(amount, 4)} SOL`,
-          `Receive est.: ${formatNumber(swapQuote.outUsdc, 2)} USDC`,
-          `Price impact: ${(swapQuote.priceImpactPct * 100).toFixed(2)}%`,
-        ],
-        feePayer: address,
-      });
-      swapStatus = "done";
-      track("swap_confirmed", { ...marketContext(), inSol: amount, outUsdc: swapQuote?.outUsdc ?? null });
-      void refreshWalletBalance(address);
-    } catch (error) {
-      swapStatus = "error";
-      swapError = error instanceof Error ? error.message : "swap-failed";
-    }
+    if (!address) throw new Error("wallet-not-connected");
+    const amount = quote.inSol;
+    const base64 = await getJupiterSwapTransaction(quote.raw, address);
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const transaction = VersionedTransaction.deserialize(bytes);
+    const connection = new Connection(solanaRpcUrl(), "confirmed");
+    const signature = await simulateConfirmAndSend(transaction, connection, {
+      title: "Swap SOL to USDC",
+      details: [
+        `Spend: ${formatNumber(amount, 4)} SOL`,
+        `Receive est.: ${formatNumber(quote.outUsdc, 2)} USDC`,
+        `Price impact: ${(quote.priceImpactPct * 100).toFixed(2)}%`,
+      ],
+      feePayer: address,
+    });
+    track("swap_confirmed", { ...marketContext(), inSol: amount, outUsdc: quote.outUsdc ?? null });
+    void refreshWalletBalance(address);
+    return signature;
   }
 
   // ── Spot venue (tokens.xyz + Jupiter) ─────────────────────────────
@@ -1999,8 +1790,8 @@
           : null;
         if (match && spotAsset?.assetId !== match.assetId) {
           spotAsset = match;
-          spotQuote = null;
-          spotQuoteStatus = "idle";
+          $spotQuote = null;
+          $spotQuoteStatus = "idle";
           spotSignature = "";
           scheduleSpotQuote();
         }
@@ -2028,8 +1819,8 @@
   function selectSpotAsset(asset: SpotAsset): void {
     const changed = spotAsset?.assetId !== asset.assetId;
     spotAsset = asset;
-    spotQuote = null;
-    spotQuoteStatus = "idle";
+    $spotQuote = null;
+    $spotQuoteStatus = "idle";
     spotSignature = "";
     if (tradeMode !== "spot") {
       setTradeMode("spot", false); // explicit pick — don't remap the asset
@@ -2069,128 +1860,61 @@
     }
   }
 
-  // ── Spot side flip ─────────────────────────────────────────────────
-  // spotAmount means USDC-spent on buy but tokens-sold on sell; flipping
-  // the side without converting turns a $25 buy into a 25-token sell one
-  // keypress later. Convert through the asset price so the ticket keeps
-  // the same economic size. Every flip path (buttons + B/S hotkeys) goes
-  // through here.
-  function flipSpotSide(side: "buy" | "sell"): void {
-    if (side !== spotSide) {
-      const amount = Number(spotAmount);
-      const price = spotAsset?.price;
-      if (price && price > 0 && Number.isFinite(amount) && amount > 0) {
-        spotAmount = fmtTriggerPrice(side === "sell" ? amount / price : amount * price);
-      }
-      spotSide = side;
-    }
-    scheduleSpotQuote();
-  }
-
   // ── Spot size chips ────────────────────────────────────────────────
   // % of wallet USDC on buy, % of the token holding on sell — the same
   // balances that power the ticket preview. Max buy keeps the $0.01 dust
-  // buffer the perp Max chip leaves.
-  const SPOT_CHIP_PCTS = [25, 50];
-  $: spotChipBalance = spotSide === "buy" ? (usdcBalanceValue ?? 0) : spotHolding;
+  // buffer the perp Max chip leaves. (The offered percentages live in
+  // SpotTicketForm.svelte; the chip math stays here with the balances.)
+  $: spotChipBalance = $spotSide === "buy" ? (usdcBalanceValue ?? 0) : spotHolding;
 
   function setSpotAmountChip(pct: number | "max"): void {
     const amount =
       pct === "max"
-        ? spotSide === "buy"
+        ? $spotSide === "buy"
           ? Math.max(0, spotChipBalance - 0.01)
           : spotChipBalance
         : (pct / 100) * spotChipBalance;
     if (amount <= 0) return;
-    if (spotSide === "buy") {
-      spotAmount = amount.toFixed(2);
+    if ($spotSide === "buy") {
+      $spotAmount = amount.toFixed(2);
     } else if (pct === "max") {
       // Max sell floors at fmtTriggerPrice's precision — round-half-up
       // could format above the real holding and the sell would fail
       // simulation with insufficient funds. 25/50% keep round formatting;
       // the remaining balance absorbs the half-ULP overage.
       const p = amount >= 1000 ? 1 : amount >= 10 ? 2 : amount >= 1 ? 3 : 5;
-      spotAmount = (Math.floor(amount * 10 ** p) / 10 ** p).toFixed(p);
+      $spotAmount = (Math.floor(amount * 10 ** p) / 10 ** p).toFixed(p);
     } else {
-      spotAmount = fmtTriggerPrice(amount);
+      $spotAmount = fmtTriggerPrice(amount);
     }
     scheduleSpotQuote();
-  }
-
-  function scheduleSpotQuote(): void {
-    if (spotQuoteTimer) clearTimeout(spotQuoteTimer);
-    // Bumping the sequence invalidates any in-flight quote — covers every
-    // mutation path (amount edits, side flips, asset switches).
-    spotQuoteSeq += 1;
-    const seq = spotQuoteSeq;
-    spotSignature = "";
-    const amount = Number(spotAmount);
-    if (!spotAsset || !Number.isFinite(amount) || amount <= 0) {
-      spotQuote = null;
-      spotQuoteStatus = "idle";
-      return;
-    }
-    spotQuoteStatus = "quoting";
-    spotQuoteTimer = setTimeout(() => void runSpotQuote(seq), 450);
-  }
-
-  async function runSpotQuote(seq: number): Promise<void> {
-    const asset = spotAsset;
-    const amount = Number(spotAmount);
-    if (!asset || !Number.isFinite(amount) || amount <= 0) return;
-    try {
-      const quote =
-        spotSide === "buy"
-          ? await getSpotQuote(
-              SPOT_USDC_MINT,
-              asset.mint,
-              usdcToAtoms(amount),
-              asset.decimals,
-            )
-          : await getSpotQuote(
-              asset.mint,
-              SPOT_USDC_MINT,
-              tokenToAtoms(amount, asset.decimals),
-              6,
-            );
-      if (seq !== spotQuoteSeq) return; // stale response — newer request owns state
-      spotQuote = quote;
-      spotQuoteStatus = "quoted";
-      spotQuotedAt = Date.now();
-      // Quotes go stale: auto-requote so displayed pricing stays honest.
-      spotQuoteTimer = setTimeout(() => scheduleSpotQuote(), 20_000);
-    } catch (error) {
-      if (seq !== spotQuoteSeq) return;
-      spotQuoteStatus = "error";
-      spotQuoteError = error instanceof Error ? error.message : "quote-failed";
-    }
   }
 
   async function executeSpotSwap(): Promise<void> {
     const address = $privyAuth.walletAddress;
     const asset = spotAsset;
-    if (!asset || !spotQuote || !address || spotBusy || walletScreen.flagged) return;
+    if (!asset || !$spotQuote || !address || spotBusy || walletScreen.flagged) return;
     // Freshness gate: never execute a quote older than 30s — re-quote instead.
-    if (Date.now() - spotQuotedAt > 30_000) {
+    if (Date.now() - spotTicket.quotedAtMs() > 30_000) {
       scheduleSpotQuote();
       return;
     }
     spotBusy = true;
-    spotQuoteError = "";
+    $spotQuoteError = "";
     try {
-      const base64 = await getSpotSwapTransaction(spotQuote.raw, address);
+      const base64 = await getSpotSwapTransaction($spotQuote.raw, address);
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
       const transaction = VersionedTransaction.deserialize(bytes);
       const connection = new Connection(solanaRpcUrl(), "confirmed");
       spotSignature = await simulateConfirmAndSend(transaction, connection, {
-        title: `${spotSide === "buy" ? "Buy" : "Sell"} ${asset.symbol}`,
+        title: `${$spotSide === "buy" ? "Buy" : "Sell"} ${asset.symbol}`,
         details: [
           `Venue: Jupiter spot route`,
-          `Amount: ${formatNumber(Number(spotAmount), 4)}`,
-          `Receive est.: ${formatNumber(spotQuote.outUi, spotSide === "buy" ? 4 : 2)} ${spotSide === "buy" ? asset.symbol : "USDC"}`,
-          `Price impact: ${(spotQuote.priceImpactPct * 100).toFixed(2)}%`,
+          `Amount: ${formatNumber(Number($spotAmount), 4)}`,
+          `Receive est.: ${formatNumber($spotQuote.outUi, $spotSide === "buy" ? 4 : 2)} ${$spotSide === "buy" ? asset.symbol : "USDC"}`,
+          `Price impact: ${($spotQuote.priceImpactPct * 100).toFixed(2)}%`,
         ],
         feePayer: address,
       });
@@ -2198,21 +1922,19 @@
         ts: Date.now(),
         venue: "spot",
         symbol: asset.symbol,
-        action: spotSide,
+        action: $spotSide,
         notionalUsd:
-          spotSide === "buy" ? Number(spotAmount) || null : (spotQuote?.outUi ?? null),
+          $spotSide === "buy" ? Number($spotAmount) || null : ($spotQuote?.outUi ?? null),
         price: asset.price,
         leverage: null,
         signature: spotSignature,
       });
       void refreshWalletBalance(address);
       void refreshTokenBalances(address);
-      spotQuoteSeq += 1; // a late in-flight quote must not re-arm the button
-      spotQuote = null;
-      spotQuoteStatus = "idle";
+      spotTicket.invalidateQuote(); // a late in-flight quote must not re-arm the button
     } catch (error) {
-      spotQuoteStatus = "error";
-      spotQuoteError = error instanceof Error ? error.message : "swap-failed";
+      $spotQuoteStatus = "error";
+      $spotQuoteError = error instanceof Error ? error.message : "swap-failed";
     } finally {
       spotBusy = false;
     }
@@ -2431,15 +2153,15 @@
   async function submitPhoenixOrder(): Promise<void> {
     const symbol = selectedSymbol;
     const busyKey = `order:${symbol}`;
-    if (!phoenixAuthority || phoenixBusyKeys.has(busyKey) || !tradePreview) return;
+    if (!phoenixAuthority || phoenixBusyKeys.has(busyKey) || !$tradePreview) return;
     // Freeze the ticket state before the first await — inputs stay editable
     // while the tx confirms, so a live read after an await could describe a
     // different order than the one submitted (or throw once the $:-derived
-    // tradePreview turns null mid-flight).
-    const preview = tradePreview;
-    const orderType = tradeType;
-    const leverage = tradeLeverage;
-    const reduceOnly = tradeReduceOnly && selectedPosition !== null;
+    // $tradePreview turns null mid-flight).
+    const preview = $tradePreview;
+    const orderType = $tradeType;
+    const leverage = $tradeLeverage;
+    const reduceOnly = $tradeReduceOnly && selectedPosition !== null;
     const entry = preview.entry ?? latestPrice;
     if (!entry || entry <= 0) return;
     setPhoenixBusy(busyKey, true);
@@ -2449,8 +2171,8 @@
     lastTradeSignature = "";
     const preFingerprint = snapshotFingerprint();
     try {
-      const side: PhoenixSide = tradeSide === "buy" ? "bid" : "ask";
-      const limitPrice = Number(tradeLimitPrice);
+      const side: PhoenixSide = $tradeSide === "buy" ? "bid" : "ask";
+      const limitPrice = Number($tradeLimitPrice);
       const refPrice =
         orderType === "limit" && Number.isFinite(limitPrice) && limitPrice > 0
           ? limitPrice
@@ -2458,8 +2180,8 @@
       const quantity = preview.notionalUsd / refPrice;
       // Phoenix-native TP/SL trigger prices, validated against the side so a
       // mis-placed trigger can't slip through.
-      const tp = Number(tradeTakeProfit);
-      const sl = Number(tradeStopLoss);
+      const tp = Number($tradeTakeProfit);
+      const sl = Number($tradeStopLoss);
       const takeProfitPrice =
         Number.isFinite(tp) && tp > 0 ? tp : null;
       const stopLossPrice = Number.isFinite(sl) && sl > 0 ? sl : null;
@@ -2482,7 +2204,7 @@
         orderType,
         notionalUsd: preview.notionalUsd,
         leverage,
-        sizingMode,
+        sizingMode: $sizingMode,
         reduceOnly,
         takeProfitPrice,
         stopLossPrice,
@@ -2759,12 +2481,6 @@
     }
   }
 
-  // Busy key for one order row — finer than the side-wide `cancel:SYM:SIDE`
-  // so cancelling one order never greys out its neighbours.
-  function orderCancelKey(order: PhoenixOpenOrder): string {
-    return `cancel:${order.symbol}:${order.side}:${order.isStopLoss ? "sl" : order.orderSequenceNumber}`;
-  }
-
   // Cancels exactly one resting order (or one stop-loss trigger) — a row's
   // Cancel must never sweep the whole side and take a protective stop with it.
   async function cancelPhoenixOrderById(order: PhoenixOpenOrder): Promise<void> {
@@ -2984,6 +2700,33 @@
   let armedHotkey: { key: "c" | "x"; until: number } | null = null;
   $: if (armedHotkey && nowMs > armedHotkey.until) armedHotkey = null;
 
+  // Status-line model: every field already derived here; the tx stage text
+  // is pre-rendered because txStageText stays with the signing pipeline
+  // (the ticket's order-stage readout shares it).
+  $: statusModel = {
+    clockMs: nowMs,
+    symbol: tradeMode === "perps" ? selectedSymbol : (spotAsset?.symbol ?? "--"),
+    selectedSymbol,
+    sessionNote,
+    streamHealth,
+    rpcLatencyMs,
+    apiSlotLag,
+    lastTx: lastTx
+      ? {
+          label: lastTx.label,
+          failed: lastTx.stage === "failed",
+          text: txStageText(lastTx, nowMs),
+        }
+      : null,
+    armedHotkey,
+    showMoney: Boolean(phoenixAuthority),
+    equityUsd: accountEquityUsd,
+    upnlUsd: accountUpnlUsd,
+    freeCollateralUsd: phoenixCollateral,
+    fundingPercent,
+    walletAddress: $privyAuth.walletAddress ?? "",
+  };
+
   function onFlattenClick(): void {
     if (Date.now() < flattenArmedUntil) {
       flattenArmedUntil = 0;
@@ -3145,26 +2888,8 @@
     }
   }
 
-  function toggleAccountMenu(event: MouseEvent): void {
-    event.stopPropagation();
-    accountMenuOpen = !accountMenuOpen;
-  }
-
-  function closeAccountMenuFromWindow(event: MouseEvent): void {
-    const target = event.target;
-    if (target instanceof HTMLElement && target.closest(".account-menu")) return;
-    accountMenuOpen = false;
-  }
-
-  function closeAccountMenuOnKey(event: KeyboardEvent): void {
-    if (event.key === "Escape") accountMenuOpen = false;
-  }
-
-  // Modals may keep keys away from the global hotkeys, but never Escape —
-  // the window handler owns close-on-Esc no matter where focus sits.
-  function swallowKeysExceptEscape(event: KeyboardEvent): void {
-    if (event.key !== "Escape") event.stopPropagation();
-  }
+  // Account-menu open/close handlers live in components/Topbar.svelte;
+  // modal Escape-swallowing lives in each modal component.
 
   async function copyWalletAddress(): Promise<void> {
     if (!$privyAuth.walletAddress) return;
@@ -3432,20 +3157,17 @@
     // Swap modals (never stack): close the ticket, open funds on Phoenix tab
     // with the shortfall prefilled.
     tradeOpen = false;
-    const shortfall = Math.max(0, requiredMarginUsd - phoenixCollateral);
+    const shortfall = Math.max(0, $requiredMarginUsd - phoenixCollateral);
     depositAmount = shortfall > 0 ? String(Math.ceil(shortfall)) : "";
     fundsOpen = true;
     fundsTab = "phoenix";
-    void generateFundsQr();
   }
 
   // Clicking a book level: prefill a limit order at that price in the
   // ticket. Side/type/price only — the book you were reading stays put
   // (desktop stacks the ticket right below it).
   function prefillFromBook(price: number, rowSide: "ask" | "bid"): void {
-    tradeSide = rowSide === "ask" ? "sell" : "buy";
-    tradeType = "limit";
-    tradeLimitPrice = String(price);
+    perpTicket.prefill(price, rowSide === "ask" ? "sell" : "buy");
     focusTicketSize();
   }
 
@@ -3471,14 +3193,12 @@
 
   function openTrade(side: "buy" | "sell"): void {
     // A live ticket flips in place: side only — size/TP/SL survive so both
-    // directions can be compared without retyping (wrong-side validation
-    // already flags stale triggers as you type). Size persists in prefs,
-    // so a fresh open keeps it too; only triggers and errors reset.
-    const flipOnly = ticketActive;
-    tradeSide = side;
+    // directions can be compared without retyping (the store clears the
+    // triggers on a fresh open; size persists in prefs). Errors reset only
+    // on a fresh open too.
+    const flipOnly = $ticketActive;
+    perpTicket.setSide(side);
     if (!flipOnly) {
-      tradeTakeProfit = "";
-      tradeStopLoss = "";
       phoenixActionError = "";
       phoenixActionErrorDetail = "";
       phoenixActionRetry = null;
@@ -3499,7 +3219,6 @@
     logoutBusy = true;
     try {
       await logoutPrivy();
-      accountMenuOpen = false;
       await refreshEdgeModules();
     } catch {
       // logout failure is non-fatal — the session clears on next boot
@@ -3538,25 +3257,25 @@
     if (intent.venue === "perp") {
       pendingTradeMode = null;
       if (intent.symbol) selectedSymbol = intent.symbol;
-      if (intent.side) tradeSide = intent.side;
-      if (intent.sizeUsd !== null) tradeAmount = String(intent.sizeUsd);
-      if (intent.leverage !== null) tradeLeverage = intent.leverage;
+      if (intent.side) $tradeSide = intent.side;
+      if (intent.sizeUsd !== null) $tradeAmount = String(intent.sizeUsd);
+      if (intent.leverage !== null) $tradeLeverage = intent.leverage;
       if (intent.limitPrice !== null) {
-        tradeType = "limit";
-        tradeLimitPrice = String(intent.limitPrice);
+        $tradeType = "limit";
+        $tradeLimitPrice = String(intent.limitPrice);
       } else if (intent.orderType) {
-        tradeType = intent.orderType;
+        $tradeType = intent.orderType;
       }
-      if (intent.takeProfit !== null) tradeTakeProfit = String(intent.takeProfit);
-      if (intent.stopLoss !== null) tradeStopLoss = String(intent.stopLoss);
+      if (intent.takeProfit !== null) $tradeTakeProfit = String(intent.takeProfit);
+      if (intent.stopLoss !== null) $tradeStopLoss = String(intent.stopLoss);
     } else if (intent.venue === "spot") {
       pendingTradeMode = "spot";
       if (intent.spotAssetId) pendingSpotAssetId = intent.spotAssetId;
-      if (intent.side) spotSide = intent.side;
-      if (intent.sizeUsd !== null) spotAmount = String(intent.sizeUsd);
+      if (intent.side) $spotSide = intent.side;
+      if (intent.sizeUsd !== null) $spotAmount = String(intent.sizeUsd);
       if (intent.limitPrice !== null) {
-        spotOrderType = "limit";
-        spotLimitPrice = String(intent.limitPrice);
+        $spotOrderType = "limit";
+        $spotLimitPrice = String(intent.limitPrice);
       }
     }
     if (intent.bookTab) bookTab = intent.bookTab;
@@ -3641,16 +3360,6 @@
     journalEntries = recordTrade(entry);
   }
 
-  function exportJournalCsv(): void {
-    const blob = new Blob([journalToCsv(journalEntries)], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "trader-ralph-journal.csv";
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
   function wipeJournal(): void {
     clearJournal();
     journalEntries = [];
@@ -3726,17 +3435,17 @@
   async function submitSpotLimitOrder(): Promise<void> {
     const address = $privyAuth.walletAddress;
     if (!spotAsset || !address || spotBusy || walletScreen.flagged) return;
-    const limit = Number(spotLimitPrice);
-    const amount = Number(spotAmount);
+    const limit = Number($spotLimitPrice);
+    const amount = Number($spotAmount);
     if (!Number.isFinite(limit) || limit <= 0) return;
     if (!Number.isFinite(amount) || amount <= 0) return;
     spotBusy = true;
-    spotQuoteError = "";
+    $spotQuoteError = "";
     try {
-      // Buy: spend `spotAmount` USDC for amount/limit tokens.
-      // Sell: sell `spotAmount` tokens for amount*limit USDC.
+      // Buy: spend `$spotAmount` USDC for amount/limit tokens.
+      // Sell: sell `$spotAmount` tokens for amount*limit USDC.
       const params =
-        spotSide === "buy"
+        $spotSide === "buy"
           ? {
               inputMint: SPOT_USDC_MINT,
               outputMint: spotAsset.mint,
@@ -3755,11 +3464,11 @@
         deserializeBase64Tx(transaction),
         connection,
         {
-          title: `Place limit ${spotSide} ${spotAsset.symbol}`,
+          title: `Place limit ${$spotSide} ${spotAsset.symbol}`,
           details: [
             `Venue: Jupiter Trigger`,
             `Limit price: ${formatPrice(limit)}`,
-            `Notional: $${formatNumber(spotSide === "buy" ? amount : amount * limit, 2)}`,
+            `Notional: $${formatNumber($spotSide === "buy" ? amount : amount * limit, 2)}`,
           ],
           feePayer: address,
         },
@@ -3768,16 +3477,16 @@
         ts: Date.now(),
         venue: "spot",
         symbol: spotAsset.symbol,
-        action: `limit-${spotSide}`,
-        notionalUsd: spotSide === "buy" ? amount : amount * limit,
+        action: `limit-${$spotSide}`,
+        notionalUsd: $spotSide === "buy" ? amount : amount * limit,
         price: limit,
         leverage: null,
         signature: spotSignature,
       });
       void refreshTriggerOrders();
     } catch (error) {
-      spotQuoteStatus = "error";
-      spotQuoteError = error instanceof Error ? error.message : "limit-failed";
+      $spotQuoteStatus = "error";
+      $spotQuoteError = error instanceof Error ? error.message : "limit-failed";
     } finally {
       spotBusy = false;
     }
@@ -3802,7 +3511,7 @@
       triggerOrders = triggerOrders.filter((order) => order.orderKey !== orderKey);
       void refreshTriggerOrders();
     } catch (error) {
-      spotQuoteError = error instanceof Error ? error.message : "cancel-failed";
+      $spotQuoteError = error instanceof Error ? error.message : "cancel-failed";
     } finally {
       triggerBusy = false;
     }
@@ -3830,10 +3539,10 @@
     if (prefs.watchlist !== undefined) watchlist = prefs.watchlist;
     if (prefs.screenSort !== undefined) screenSort = prefs.screenSort;
     if (prefs.screenHub !== undefined) screenHub = prefs.screenHub;
-    if (prefs.sizingMode !== undefined) sizingMode = prefs.sizingMode;
-    if (prefs.tradeAmount !== undefined) tradeAmount = prefs.tradeAmount;
-    if (prefs.tradeRiskUsd !== undefined) tradeRiskUsd = prefs.tradeRiskUsd;
-    if (prefs.tradeLeverage !== undefined) tradeLeverage = prefs.tradeLeverage;
+    if (prefs.sizingMode !== undefined) $sizingMode = prefs.sizingMode;
+    if (prefs.tradeAmount !== undefined) $tradeAmount = prefs.tradeAmount;
+    if (prefs.tradeRiskUsd !== undefined) $tradeRiskUsd = prefs.tradeRiskUsd;
+    if (prefs.tradeLeverage !== undefined) $tradeLeverage = prefs.tradeLeverage;
   }
 
   function loadOpenBetaBanner(): void {
@@ -3920,7 +3629,6 @@
   }
 
   function onGlobalKeydown(event: KeyboardEvent): void {
-    closeAccountMenuOnKey(event);
     if (event.key === "Escape") {
       if (tradeOpen) tradeOpen = false;
       if (authOpen) authOpen = false;
@@ -3942,7 +3650,7 @@
     // other overlay owns the keyboard, flip it in place instead of
     // rebuilding it — B/S swap side, M/L swap order type.
     if (
-      ticketActive &&
+      $ticketActive &&
       tradeMode === "perps" &&
       !authOpen &&
       !alertsOpen &&
@@ -3953,13 +3661,14 @@
       const ticketKey = event.key.toLowerCase();
       if (ticketKey === "b" || ticketKey === "s") {
         event.preventDefault();
-        tradeSide = ticketKey === "b" ? "buy" : "sell";
+        // Ticket is live here, so setSide flips in place (TP/SL survive).
+        perpTicket.setSide(ticketKey === "b" ? "buy" : "sell");
         focusTicketSize();
         return;
       }
       if (ticketKey === "m" || ticketKey === "l") {
         event.preventDefault();
-        tradeType = ticketKey === "m" ? "market" : "limit";
+        $tradeType = ticketKey === "m" ? "market" : "limit";
         return;
       }
     }
@@ -4057,169 +3766,37 @@
   />
 </svelte:head>
 
-<svelte:window
-  onclick={closeAccountMenuFromWindow}
-  onkeydown={onGlobalKeydown}
-/>
+<svelte:window onkeydown={onGlobalKeydown} />
 
 <main class="terminal-shell">
   <a class="skip-link" href="#terminal-content">Skip to terminal content</a>
 
-  <header class="topbar" bind:clientHeight={topbarHeight}>
-    <a class="brand" href="/terminal" aria-label="Trader Ralph terminal">
-      <span class="brand-mark"><BrandMark /></span>
-      <span>Trader Ralph</span>
-      <strong>Terminal</strong>
-    </a>
-    <div class="topbar-actions">
-      {#if layoutCustomized}
-        <button class="ghost" type="button" onclick={resetLayout}>Reset layout</button>
-      {/if}
-      <button class="secondary alerts-btn" type="button" onclick={() => (alertsOpen = true)}>
-        Alerts{#if $alerts.filter((a) => !a.triggered).length}
-          <span class="alerts-count">{$alerts.filter((a) => !a.triggered).length}</span>
-        {/if}
-      </button>
-      {#if $privyAuth.authenticated}
-        <div class="account-menu">
-          <button
-            class="account-trigger"
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={accountMenuOpen}
-            onclick={toggleAccountMenu}
-          >
-            <span class="account-trigger-text">
-              <small>{$privyAuth.email ? shortEmail($privyAuth.email) : "Account"}</small>
-              <strong>{balanceText}</strong>
-            </span>
-            <span class="account-caret" class:open={accountMenuOpen} aria-hidden="true"></span>
-          </button>
-          {#if accountMenuOpen}
-            <div
-              class="account-dropdown"
-              role="menu"
-              tabindex="-1"
-              onclick={(event) => event.stopPropagation()}
-              onkeydown={(event) => event.stopPropagation()}
-            >
-              <div class="account-dropdown-head">
-                <div class="account-identity">
-                  <small>Signed in</small>
-                  <strong>{$privyAuth.email ?? "Privy account"}</strong>
-                </div>
-                <span class="wallet-badge {$privyAuth.walletStatus}">{walletStatusLabel}</span>
-              </div>
-
-              <button
-                class="account-row copyable"
-                type="button"
-                disabled={!$privyAuth.walletAddress}
-                onclick={copyWalletAddress}
-              >
-                <span class="account-row-label">Wallet</span>
-                <span class="account-row-value mono">
-                  {$privyAuth.walletAddress ? shortAddress($privyAuth.walletAddress) : "Not provisioned"}
-                </span>
-                {#if $privyAuth.walletAddress}
-                  <span class="copy-hint" class:done={walletCopied}>{walletCopied ? "Copied" : "Copy"}</span>
-                {/if}
-              </button>
-
-              {#if walletScreen.checked}
-                <div class="account-row">
-                  <span class="account-row-label">Screening</span>
-                  <span class="account-row-value">OFAC SDN</span>
-                  <span class="macro-chip {walletScreen.flagged ? 'down' : 'up'}">
-                    {walletScreen.flagged ? "Flagged" : "Clear"}
-                  </span>
-                </div>
-              {/if}
-
-              {#if phoenixWhitelisted !== null}
-                <div class="account-row">
-                  <span class="account-row-label">Phoenix</span>
-                  <span class="account-row-value">beta access</span>
-                  <span class="macro-chip {phoenixWhitelisted ? 'up' : 'warn'}">
-                    {phoenixWhitelisted ? "Active" : "Pending"}
-                  </span>
-                </div>
-
-              {/if}
-
-              <div class="account-row">
-                <span class="account-row-label">Funds</span>
-                <span class="account-row-value mono">
-                  {balanceText}
-                  {#if phoenixTotalCollateral > 0 && usdcBalanceValue !== null}
-                    <small class="funds-split">
-                      {formatNumber(usdcBalanceValue, 2)} wallet · {formatNumber(phoenixTotalCollateral, 2)} phoenix
-                    </small>
-                  {/if}
-                </span>
-                <button
-                  class="row-action"
-                  type="button"
-                  disabled={!$privyAuth.walletAddress || walletBalanceStatus === "loading"}
-                  onclick={() => {
-                    void refreshWalletBalance();
-                    void refreshPhoenixTrader();
-                  }}
-                >
-                  {walletBalanceStatus === "loading" ? "…" : "Refresh"}
-                </button>
-              </div>
-
-              <div class="account-row">
-                <span class="account-row-label">Gas</span>
-                <span class="account-row-value mono">{walletBalanceText}</span>
-              </div>
-
-              {#if walletBalanceError}
-                <p class="account-dropdown-note warn">{walletBalanceError}</p>
-              {/if}
-
-              <button
-                class="account-action accent"
-                type="button"
-                disabled={!$privyAuth.walletAddress || walletScreen.flagged}
-                onclick={openFunds}
-              >
-                {walletScreen.flagged ? "Funding blocked (flagged)" : "Add funds"}
-              </button>
-
-              <button class="account-action danger" type="button" disabled={logoutBusy} onclick={disconnectPrivy}>
-                {logoutBusy ? "Logging out…" : "Log out"}
-              </button>
-            </div>
-          {/if}
-        </div>
-      {:else}
-        {#if !$privyAuth.configured}
-          <span class="connect-status error">
-            <span class="stream-dot offline" aria-hidden="true"></span>
-            Auth not configured
-          </span>
-        {:else if $privyAuth.status === "error"}
-          <span class="connect-status error">
-            <span class="stream-dot offline" aria-hidden="true"></span>
-            Connection failed
-          </span>
-        {/if}
-        <button
-          class="primary connect-btn"
-          type="button"
-          disabled={$privyAuth.status === "loading" || !$privyAuth.configured}
-          onclick={openAuthModal}
-        >
-          {#if $privyAuth.status === "loading"}
-            <span class="spinner" aria-hidden="true"></span>
-          {/if}
-          {connectLabel}
-        </button>
-      {/if}
-    </div>
-  </header>
+  <Topbar
+    bind:height={topbarHeight}
+    wallet={{
+      balanceText,
+      gasText: walletBalanceText,
+      status: walletBalanceStatus,
+      error: walletBalanceError,
+      usdcValue: usdcBalanceValue,
+      phoenixCollateral: phoenixTotalCollateral,
+      screen: walletScreen,
+      whitelisted: phoenixWhitelisted,
+      copied: walletCopied,
+    }}
+    {layoutCustomized}
+    {logoutBusy}
+    onopenauth={openAuthModal}
+    onopenfunds={openFunds}
+    onopenalerts={() => (alertsOpen = true)}
+    onresetlayout={resetLayout}
+    onlogout={disconnectPrivy}
+    oncopyaddress={copyWalletAddress}
+    onrefreshbalances={() => {
+      void refreshWalletBalance();
+      void refreshPhoenixTrader();
+    }}
+  />
 
   {#if showOpenBetaBanner}
     <div class="terminal-notice">
@@ -4227,131 +3804,22 @@
     </div>
   {/if}
 
-  <div
-    class="market-rail"
-    bind:clientHeight={marketRailHeight}
-    style={`--rail-top: ${topbarHeight}px;`}
-  >
-  <div class="ticker" role="status" aria-live="polite">
-    {#if tradeMode === "spot" && spotAsset}
-      <div class="ticker-symbol">
-        <button
-          class="star-btn"
-          class:starred={watchlist.includes(spotAsset.symbol.toUpperCase())}
-          type="button"
-          aria-label="Toggle watchlist"
-          onclick={() => spotAsset && toggleWatch(spotAsset.symbol)}
-        >{watchlist.includes(spotAsset.symbol.toUpperCase()) ? "★" : "☆"}</button>
-        <button class="ticker-market" type="button" onclick={openPalette} title="Change market — press /">
-          <strong>{spotAsset.symbol}</strong>
-          <span class="ticker-caret" aria-hidden="true">▾</span>
-        </button>
-        <span class="ticker-health">spot</span>
-      </div>
-      <div class="ticker-price">
-        <b
-          class:positive={(spotAsset.change24hPct ?? 0) >= 0}
-          class:negative={(spotAsset.change24hPct ?? 0) < 0}
-        >
-          {formatPrice(spotAsset.price)}
-        </b>
-        <em
-          class:positive={(spotAsset.change24hPct ?? 0) >= 0}
-          class:negative={(spotAsset.change24hPct ?? 0) < 0}
-        >
-          {formatPercent(spotAsset.change24hPct)} 24h
-        </em>
-      </div>
-      <div class="ticker-stats">
-        {@render TickerStat("Liquidity", `$${formatNumber(spotAsset.liquidityUsd, 0)}`, "6rem", false)}
-        {@render TickerStat("Mkt Cap", `$${formatNumber(spotAsset.marketCap, 0)}`, "6rem", false)}
-        {@render TickerStat("24h Vol", `$${formatNumber(spotAsset.volume24hUsd, 0)}`, "6.5rem", false)}
-        {@render TickerStat("Venue", "Jupiter", "4.5rem", false)}
-        {@render TickerStat("Trust", spotAsset.trustTier || "—", "4rem", false)}
-        {#if spotBasisBps !== null}
-          {@render TickerStat(
-            "Perp basis",
-            `${spotBasisBps >= 0 ? "+" : ""}${formatNumber(spotBasisBps, 0)} bps`,
-            "5.5rem",
-            false,
-            spotBasisBps >= 0 ? "positive" : "negative",
-          )}
-        {/if}
-      </div>
-    {:else}
-      <div class="ticker-symbol">
-        <button
-          class="star-btn"
-          class:starred={watchlist.includes(selectedSymbol)}
-          type="button"
-          aria-label="Toggle watchlist"
-          onclick={() => toggleWatch(selectedSymbol)}
-        >{watchlist.includes(selectedSymbol) ? "★" : "☆"}</button>
-        <button class="ticker-market" type="button" onclick={openPalette} title="Change market — press /">
-          <strong>{selectedSymbol}-PERP</strong>
-          <span class="ticker-caret" aria-hidden="true">▾</span>
-        </button>
-        <span class="ticker-health">{streamHealth}</span>
-      </div>
-      <div class="ticker-price">
-        {#if priceLoading}
-          <span class="skeleton skel-price" aria-hidden="true"></span>
-        {:else}
-          <b
-            class:positive={(change24h ?? 0) >= 0}
-            class:negative={(change24h ?? 0) < 0}
-          >
-            {formatPrice(chartPrice)}
-          </b>
-          <em
-            class:positive={(change24h ?? 0) >= 0}
-            class:negative={(change24h ?? 0) < 0}
-          >
-            {formatPercent(change24h)} 24h
-          </em>
-        {/if}
-      </div>
-      <div class="ticker-stats">
-        {@render TickerStat("Mark", formatPrice(marketStats?.markPx), "4.5rem", statsLoading)}
-        {@render TickerStat("Oracle", formatPrice(marketStats?.oraclePx), "4.5rem", statsLoading)}
-        {@render TickerStat("Spread", `${formatNumber(spreadBps, 1)} bps`, "4.5rem", bookLoading)}
-        {@render TickerStat(
-          "Funding",
-          formatPercent(fundingPercent),
-          "4rem",
-          statsLoading,
-          (fundingPercent ?? 0) >= 0 ? "positive" : "negative",
-        )}
-        {#if perpBasisBps !== null}
-          {@render TickerStat(
-            "Basis",
-            `${perpBasisBps >= 0 ? "+" : ""}${formatNumber(perpBasisBps, 0)} bps`,
-            "4.5rem",
-            false,
-            perpBasisBps >= 0 ? "positive" : "negative",
-          )}
-        {/if}
-        {@render TickerStat("Open Int", formatNumber(marketStats?.openInterest, 0), "5rem", statsLoading)}
-        {@render TickerStat("24h Vol", formatNumber(marketStats?.dayNtlVlm, 0), "6.5rem", statsLoading)}
-        {@render TickerStat("Updated", marketFresh, "4.5rem", updatedLoading)}
-      </div>
-    {/if}
-  </div>
-
-  <nav class="section-nav" aria-label="Jump to terminal section">
-    {#each SECTION_LINKS as link}
-      <button
-        type="button"
-        class:active={activeSection === link.id}
-        onclick={() => scrollToSection(link.id)}
-      >
-        {link.label}
-      </button>
-    {/each}
-  </nav>
-
-  <NewsMarquee {news} />
-  </div>
+  <TickerRail
+    perp={tickerPerp}
+    spot={tickerSpot}
+    {streamHealth}
+    {marketFresh}
+    {tradeMode}
+    {selectedSymbol}
+    {watchlist}
+    {news}
+    {activeSection}
+    {topbarHeight}
+    bind:railHeight={marketRailHeight}
+    ontogglewatch={toggleWatch}
+    onopenpalette={openPalette}
+    onsectionselect={scrollToSection}
+  />
 
   <!-- Sticky chrome (topbar on desktop + market rail) covers the top of the
        viewport — jump-to-section targets scroll-margin below it. -->
@@ -4613,9 +4081,16 @@
               </button>
             </div>
             {#if bookFeed === "ladder"}
-              {@render BookLadder()}
+              <BookLadder
+                asks={visibleAskLevels}
+                bids={visibleBidLevels}
+                {spread}
+                {spreadPercent}
+                maxNotional={bookMaxNotional}
+                onpick={prefillFromBook}
+              />
             {:else}
-              {@render TapeFeed()}
+              <Tape {trades} />
             {/if}
           </div>
         {/if}
@@ -4627,9 +4102,9 @@
           onkeydown={tradeMode === "spot" ? onSpotTicketKeydown : onTicketKeydown}
         >
           {#if tradeMode === "spot"}
-            {@render SpotTicketForm()}
+            {@render spotTicketForm()}
           {:else}
-            {@render TicketForm()}
+            {@render perpTicketForm()}
           {/if}
         </div>
       {:else}
@@ -4680,9 +4155,16 @@
             </div>
           </div>
 
-          {@render BookLadder()}
+          <BookLadder
+            asks={visibleAskLevels}
+            bids={visibleBidLevels}
+            {spread}
+            {spreadPercent}
+            maxNotional={bookMaxNotional}
+            onpick={prefillFromBook}
+          />
 
-          {@render TapeFeed()}
+          <Tape {trades} />
         {:else}
           <!-- Enter from any ticket input submits, gated exactly like the button. -->
           <div
@@ -4691,395 +4173,76 @@
             onkeydown={tradeMode === "spot" ? onSpotTicketKeydown : onTicketKeydown}
           >
             {#if tradeMode === "spot"}
-              {@render SpotTicketForm()}
+              {@render spotTicketForm()}
             {:else}
-              {@render TicketForm()}
+              {@render perpTicketForm()}
             {/if}
           </div>
         {/if}
       {/if}
     </section>
 
-    <section
-      class="panel monitor-panel"
-      role="group"
-      data-panel="monitor"
-      style={panelStyle("monitor", $panelOrder)}
-      class:dragging={$draggedPanel === "monitor"}
-      class:drag-over={$dragOverPanel === "monitor"}
-      ondragover={(event) => onPanelDragOver(event, "monitor")}
-      ondragleave={() => onPanelDragLeave("monitor")}
-      ondrop={(event) => onPanelDrop(event, "monitor")}
-    >
-      <div class="panel-head">
-        <DragHead panelId="monitor" kicker="MARKETS" title={`${markets.length} perp markets`} />
-        <div class="monitor-sorts" role="group" aria-label="Sort monitor">
-          {#each ["volume", "change", "symbol"] as key (key)}
-            <button
-              type="button"
-              class:active={monitorSort === key}
-              onclick={() => (monitorSort = key as typeof monitorSort)}
-            >{key}</button>
-          {/each}
-        </div>
-      </div>
-      <div class="monitor-list">
-        <div class="monitor-row monitor-head" aria-hidden="true">
-          <span>Market</span><span class="r">Mark</span><span class="r">24h</span><span class="r">Volume</span>
-        </div>
-        {#each monitorRows as row (row.symbol)}
-          <button
-            type="button"
-            class="monitor-row"
-            class:active={row.symbol === selectedSymbol && tradeMode === "perps"}
-            onclick={() => chooseMonitorRow(row.symbol)}
-          >
-            <span class="monitor-sym">
-              {row.symbol}
-              {#if row.lev}<i>{row.lev}x</i>{/if}
-            </span>
-            <span class="r mono">{formatPrice(row.mid)}</span>
-            <span
-              class="r mono"
-              class:positive={(row.change ?? 0) > 0}
-              class:negative={(row.change ?? 0) < 0}
-            >{row.change === null ? "--" : formatPercent(row.change)}</span>
-            <span class="r mono">{row.volume === null ? "--" : `$${formatNumber(row.volume, 0)}`}</span>
-          </button>
-        {:else}
-          <div class="empty">Markets loading…</div>
-        {/each}
-      </div>
-    </section>
+    <MonitorPanel
+      {markets}
+      {marketMids}
+      {dailyStats}
+      {selectedSymbol}
+      {tradeMode}
+      onselect={chooseMonitorRow}
+    />
 
-    <section
-      id="section-perp"
-      class="panel perp-panel"
-      role="group"
-      data-panel="perp"
-      style={panelStyle("perp", $panelOrder)}
-      class:dragging={$draggedPanel === "perp"}
-      class:drag-over={$dragOverPanel === "perp"}
-      ondragover={(event) => onPanelDragOver(event, "perp")}
-      ondragleave={() => onPanelDragLeave("perp")}
-      ondrop={(event) => onPanelDrop(event, "perp")}
-    >
-      <div class="panel-head">
-        <DragHead panelId="perp" kicker="PERP_DESK" title="Phoenix account" />
-        {#if enrichedPositions.length > 0}
-          <!-- Two-stage armed; fixed width so the relabel never shifts layout. -->
-          <button
-            class="row-action flatten-btn"
-            class:armed={flattenArmed}
-            type="button"
-            disabled={flattenBusy}
-            onclick={onFlattenClick}
-          >
-            {#if flattenBusy}<span class="spinner" aria-hidden="true"></span>{/if}
-            {flattenBusy ? "Flattening…" : flattenArmed ? "Confirm flatten" : "FLATTEN"}
-          </button>
-        {/if}
-        <button class="primary" type="button" onclick={() => openTrade("buy")}>Trade</button>
-      </div>
-      <AiReadLine read={fundingRead} />
-
-      {#if phoenixAuthority && phoenixTrader}
-        <div class="venue-strip">
-          <div><span>Collateral</span><b>{phoenixTrader.collateralUsd !== null ? `$${formatNumber(phoenixTrader.collateralUsd, 2)}` : "--"}</b></div>
-          <div><span>uPnL</span>
-            <b
-              class:positive={(phoenixTrader.unrealizedPnlUsd ?? 0) >= 0}
-              class:negative={(phoenixTrader.unrealizedPnlUsd ?? 0) < 0}
-            >{phoenixTrader.unrealizedPnlUsd !== null ? `$${formatNumber(phoenixTrader.unrealizedPnlUsd, 2)}` : "--"}</b>
-          </div>
-          <div><span>Risk</span><b>{phoenixTrader.riskTier ?? "--"}</b></div>
-          <div>
-            <span>Exposure</span>
-            <b
-              class:warn={(accountLeverage ?? 0) > 10 && (accountLeverage ?? 0) <= 15}
-              class:negative={(accountLeverage ?? 0) > 15}
-            >
-              {accountExposureUsd > 0
-                ? `$${formatNumber(accountExposureUsd, 0)} · ${formatNumber(accountLeverage, 1)}x`
-                : "--"}
-            </b>
-          </div>
-          {#if sessionPnlUsd !== null && equityValues.length >= 2}
-            <!-- Since the UTC day's first equity sample, deposit/withdraw
-                 shifted out — needs two points before it means anything. -->
-            <div>
-              <span>Day P&L</span>
-              <b class:positive={sessionPnlUsd >= 0} class:negative={sessionPnlUsd < 0}>
-                {sessionPnlUsd >= 0 ? "+" : "-"}${formatNumber(Math.abs(sessionPnlUsd), 2)}
-                {#if sessionPnlPct !== null}({formatPercent(sessionPnlPct)}){/if}
-                <Spark values={equityValues} tone={sessionPnlUsd >= 0 ? "up" : "down"} />
-              </b>
-            </div>
-          {/if}
-          <button class="row-action" type="button" onclick={openFunds}>Deposit</button>
-        </div>
-
-        {#if phoenixTrader.positions.length > 0}
-          <AiReadLine read={briefRead} />
-        {/if}
-
-        {#if phoenixActionError}
-          <p class="auth-note error venue-note" title={phoenixActionErrorDetail || undefined}>
-            {phoenixActionError}
-            {#if phoenixActionRetry}
-              <button class="row-action" type="button" onclick={phoenixActionRetry}>Retry</button>
-            {/if}
-          </p>
-        {/if}
-
-        {#if enrichedPositions.length > 0 || pendingOrder}
-          <div class="venue-section">Positions</div>
-          {#if pendingOrder}
-            <!-- Optimistic row while the indexer catches up; the burst poll
-                 replaces it with the real row or drops it on timeout. -->
-            <div class="pos-card pos-pending">
-              <div class="pos-card-top">
-                <span class="pos-side">{pendingOrder.side === "bid" ? "LONG" : "SHORT"}</span>
-                <span class="pos-symbol-static">{pendingOrder.symbol}</span>
-                <b class="mono">
-                  ${formatNumber(pendingOrder.notionalUsd, 2)}
-                  @ {formatPrice(pendingOrder.refPrice)} · {pendingOrder.leverage}x
-                </b>
-              </div>
-              <div class="pos-card-mid mono">
-                <span>
-                  confirming with indexer{apiSlotLag !== null ? ` · SYNC −${apiSlotLag}` : ""}
-                </span>
-              </div>
-            </div>
-          {/if}
-          {#each enrichedPositions as position (`${position.symbol}:${position.subaccountIndex}`)}
-            {@const roePct =
-              position.unrealizedPnl !== null && position.marginUsd
-                ? (position.unrealizedPnl / position.marginUsd) * 100
-                : null}
-            {@const liqDist = liqDistancePctOf(position)}
-            {@const rowKey = `${position.symbol}:${position.subaccountIndex}`}
-            {@const closeBusy = phoenixBusyKeys.has(`close:${rowKey}`)}
-            <div class="pos-card">
-              <div class="pos-card-top">
-                <span
-                  class="pos-side"
-                  class:positive={position.size > 0}
-                  class:negative={position.size < 0}
-                >{position.size > 0 ? "LONG" : "SHORT"}</span>
-                <button
-                  class="pos-symbol"
-                  type="button"
-                  title="Show on chart"
-                  onclick={() => chooseMonitorRow(position.symbol)}
-                >{position.symbol}</button>
-                <b class="mono">
-                  {formatNumber(Math.abs(position.size), 4)}
-                  {#if position.positionValue !== null}(${formatNumber(position.positionValue, 2)}){/if}
-                </b>
-                <em
-                  class="mono"
-                  class:positive={(position.unrealizedPnl ?? 0) >= 0}
-                  class:negative={(position.unrealizedPnl ?? 0) < 0}
-                >
-                  {position.unrealizedPnl !== null
-                    ? `${position.unrealizedPnl >= 0 ? "+" : "-"}$${formatNumber(Math.abs(position.unrealizedPnl), 2)}`
-                    : "--"}
-                  {#if roePct !== null}({roePct >= 0 ? "+" : ""}{formatNumber(roePct, 1)}%){/if}
-                </em>
-              </div>
-              <div class="pos-card-mid mono">
-                <span>entry {formatPrice(position.entryPrice)}</span>
-                <span>
-                  mark {formatPrice(
-                    marketMids[position.symbol] ??
-                      (position.symbol === selectedSymbol ? latestPrice : null),
-                  )}
-                </span>
-                <span>
-                  TP {position.takeProfitPrice !== null ? formatPrice(position.takeProfitPrice) : "--"}
-                  · SL {position.stopLossPrice !== null ? formatPrice(position.stopLossPrice) : "--"}
-                </span>
-              </div>
-              <div class="pos-card-bottom">
-                {#if liqDist !== null}
-                  <div
-                    class="liq-bar"
-                    class:warn={liqDist < 25}
-                    class:danger={liqDist < 10}
-                    title={`Liquidation est ${formatNumber(liqDist, 1)}% away`}
-                  >
-                    <i style={`width: ${Math.min(100, (liqDist / 50) * 100)}%;`}></i>
-                    <span class="mono">liq {formatNumber(liqDist, 1)}% away</span>
-                  </div>
-                {:else}
-                  <span class="mono liq-none">liq --</span>
-                {/if}
-                {#if liqDist !== null && liqDist < 25}
-                  <!-- The remedy that actually moves an isolated liq price:
-                       margin into the child subaccount, not an account deposit. -->
-                  <button
-                    class="row-action"
-                    type="button"
-                    onclick={() => openMarginAdd(position)}
-                  >
-                    Margin +
-                  </button>
-                {/if}
-                {#if position.unrealizedPnl !== null}
-                  <button
-                    class="row-action"
-                    type="button"
-                    onclick={() => sharePhoenixPosition(position, marketMids)}
-                  >
-                    Share
-                  </button>
-                {/if}
-                {#each [25, 50, 75] as pct (pct)}
-                  <button
-                    class="pct-chip"
-                    type="button"
-                    disabled={closeBusy || closingKeys.has(rowKey)}
-                    title={`Close ${pct}% — TP/SL remain attached`}
-                    onclick={() => closePhoenixPositionFraction(position, pct / 100)}
-                  >
-                    {pct}%
-                  </button>
-                {/each}
-                <button
-                  class="row-action"
-                  type="button"
-                  disabled={closeBusy || closingKeys.has(rowKey)}
-                  onclick={() =>
-                    closePhoenixPosition(
-                      position.symbol,
-                      position.size,
-                      position.subaccountIndex,
-                    )}
-                >
-                  {#if closeBusy}<span class="spinner" aria-hidden="true"></span>{/if}
-                  {closingKeys.has(rowKey) ? "Closing…" : "Close"}
-                </button>
-              </div>
-              {#if marginAddKey === rowKey}
-                {@const marginBusy = phoenixBusyKeys.has(`margin:${rowKey}`)}
-                <div class="margin-add mono">
-                  <input
-                    bind:value={marginAddValue}
-                    inputmode="decimal"
-                    aria-label="Margin to add (USDC)"
-                    placeholder="USDC"
-                  />
-                  <button
-                    class="row-action"
-                    type="button"
-                    disabled={marginBusy || !(Number(marginAddValue) > 0)}
-                    onclick={() => submitMarginAdd(position)}
-                  >
-                    {#if marginBusy}<span class="spinner" aria-hidden="true"></span>{/if}
-                    Add margin
-                  </button>
-                  <span class="margin-add-note">free ${formatNumber(Math.max(0, phoenixCollateral), 2)}</span>
-                </div>
-              {/if}
-            </div>
-          {/each}
-          <div class="pos-total mono">
-            <span>TOTAL</span>
-            <span>
-              exp ${formatNumber(
-                enrichedPositions.reduce(
-                  (sum, position) => sum + (position.positionValue ?? 0),
-                  0,
-                ),
-                2,
-              )}
-            </span>
-            <span
-              class:positive={accountUpnlUsd >= 0}
-              class:negative={accountUpnlUsd < 0}
-            >uPNL {accountUpnlUsd >= 0 ? "+" : "-"}${formatNumber(Math.abs(accountUpnlUsd), 2)}</span>
-          </div>
-        {/if}
-
-        {#if perpOpenOrders.length > 0}
-          <div class="venue-section venue-section-row">
-            <span>Open orders</span>
-            {#if perpBidSweepSymbols.length > 0}
-              <button
-                class="row-action"
-                type="button"
-                disabled={cancelSweepBusy}
-                onclick={() => cancelAllPhoenixOrdersOnSide("bid")}
-              >
-                Cancel all bids
-              </button>
-            {/if}
-            {#if perpAskSweepSymbols.length > 0}
-              <button
-                class="row-action"
-                type="button"
-                disabled={cancelSweepBusy}
-                onclick={() => cancelAllPhoenixOrdersOnSide("ask")}
-              >
-                Cancel all asks
-              </button>
-            {/if}
-          </div>
-          {#each perpOpenOrders as order (order.orderSequenceNumber)}
-            {@const mark = marketMids[order.symbol] ?? (order.symbol === selectedSymbol ? latestPrice : null)}
-            {@const cancelBusy = phoenixBusyKeys.has(orderCancelKey(order))}
-            <div class="venue-row">
-              <span class={order.side === "bid" ? "positive" : "negative"}>
-                {order.isStopLoss ? "STOP" : "LIMIT"} {order.side.toUpperCase()} {order.symbol}
-              </span>
-              <b class="mono">
-                {order.remaining !== null ? formatNumber(order.remaining, 4) : "--"}
-                @ {formatPrice(order.price)}
-              </b>
-              <em class="mono">
-                {mark !== null && order.price !== null
-                  ? `${formatNumber((Math.abs(order.price - mark) / mark) * 100, 2)}% away`
-                  : "--"}
-              </em>
-              <em class="mono order-seq">#{order.orderSequenceNumber.slice(0, 8)}</em>
-              <button
-                class="row-action"
-                type="button"
-                disabled={cancelBusy}
-                onclick={() => cancelPhoenixOrderById(order)}
-              >
-                {#if cancelBusy}<span class="spinner" aria-hidden="true"></span>{/if}
-                Cancel
-              </button>
-            </div>
-          {/each}
-        {/if}
-
-        {#if phoenixTrader.positions.length === 0 && phoenixTrader.orders.length === 0 && !pendingOrder}
-          <div class="empty">
-            {phoenixTrader.registered
-              ? "No open positions or orders."
-              : "No Phoenix account yet — your first order or deposit creates it."}
-          </div>
-        {/if}
-      {:else if phoenixAuthority}
-        <div class="empty">Loading Phoenix account…</div>
-      {:else}
-        <div class="empty">Connect your account to trade on Phoenix.</div>
-      {/if}
-
-      <div class="table">
-        {#each selectedMarketRows as row}
-          <div class="table-row">
-            <span>{row.label}</span>
-            <b>{row.value}</b>
-            <em>{row.status}</em>
-          </div>
-        {/each}
-      </div>
-    </section>
+    <PerpDeskPanel
+      authority={phoenixAuthority}
+      trader={phoenixTrader}
+      positions={enrichedPositions}
+      openOrders={perpOpenOrders}
+      {pendingOrder}
+      account={{
+        upnl: accountUpnlUsd,
+        exposure: accountExposureUsd,
+        leverage: accountLeverage,
+      }}
+      {sessionPnlUsd}
+      {sessionPnlPct}
+      {equityValues}
+      {fundingRead}
+      {briefRead}
+      actionError={phoenixActionError}
+      actionErrorDetail={phoenixActionErrorDetail}
+      actionRetry={phoenixActionRetry}
+      busyKeys={phoenixBusyKeys}
+      {closingKeys}
+      {apiSlotLag}
+      {marketMids}
+      {selectedSymbol}
+      {latestPrice}
+      marketRows={selectedMarketRows}
+      freeCollateralUsd={phoenixCollateral}
+      {flattenArmed}
+      {flattenBusy}
+      bidSweepSymbols={perpBidSweepSymbols}
+      askSweepSymbols={perpAskSweepSymbols}
+      {cancelSweepBusy}
+      {marginAddKey}
+      bind:marginAddValue
+      ontrade={openTrade}
+      ondeposit={openFunds}
+      onselectsymbol={chooseMonitorRow}
+      onshare={(position) => sharePhoenixPosition(position, marketMids)}
+      onclose={(position) =>
+        closePhoenixPosition(
+          position.symbol,
+          position.size,
+          position.subaccountIndex,
+        )}
+      onclosepartial={(position, fraction) =>
+        closePhoenixPositionFraction(position, fraction)}
+      oncancelorder={(order) => cancelPhoenixOrderById(order)}
+      oncancelside={(side) => cancelAllPhoenixOrdersOnSide(side)}
+      onflatten={onFlattenClick}
+      onmarginopen={openMarginAdd}
+      onmarginsubmit={(position) => submitMarginAdd(position)}
+    />
 
     <MacroPanel
       title="MACRO_RADAR"
@@ -5099,46 +4262,14 @@
     />
     <MacroPanel title="OIL_MACRO" subtitle="Energy regime" panel={oilPanel} panelId="oil" />
 
-    <section
-      class="panel macro-panel"
-      role="group"
-      data-panel="events"
-      style={panelStyle("events", $panelOrder)}
-      class:dragging={$draggedPanel === "events"}
-      class:drag-over={$dragOverPanel === "events"}
-      ondragover={(event) => onPanelDragOver(event, "events")}
-      ondragleave={() => onPanelDragLeave("events")}
-      ondrop={(event) => onPanelDrop(event, "events")}
-    >
-      <div class="panel-head">
-        <DragHead panelId="events" kicker="EVENT_RADAR" title="Live headlines" />
-        <button
-          class="link-chip"
-          class:on={newsLinked}
-          type="button"
-          title="Filter headlines to the active market"
-          onclick={() => (newsLinked = !newsLinked)}
-        >{newsLinked && activeNewsSymbol ? activeNewsSymbol : "ALL"}</button>
-        {#if newsLinked && headlineVelocity > 3}
-          <span class="velocity-chip">{headlineVelocity}/h</span>
-        {/if}
-      </div>
-      <AiReadLine read={eventRead} />
-      <div class="news-list">
-        {#each linkedNews.slice(0, 6) as item (item.url)}
-          <a class="news-row" href={item.url} target="_blank" rel="noopener noreferrer">
-            <span class="news-row-title">{item.title}</span>
-            <em>{item.domain} · {formatAge(item.seenMs)}</em>
-          </a>
-        {:else}
-          <div class="empty">
-            {newsLinked && activeNewsSymbol
-              ? `No ${activeNewsSymbol} headlines in feed.`
-              : "No headlines loaded."}
-          </div>
-        {/each}
-      </div>
-    </section>
+    <EventsPanel
+      {news}
+      {selectedSymbol}
+      spotSymbol={spotAsset?.symbol ?? null}
+      {tradeMode}
+      {eventRead}
+      {nowMs}
+    />
 
     <section
       class="panel macro-panel"
@@ -5157,283 +4288,47 @@
       <AiReadLine read={ideasRead} />
     </section>
 
-    <section
-      class="panel watchlist-panel"
-      role="group"
-      data-panel="watch"
-      style={panelStyle("watch", $panelOrder)}
-      class:dragging={$draggedPanel === "watch"}
-      class:drag-over={$dragOverPanel === "watch"}
-      ondragover={(event) => onPanelDragOver(event, "watch")}
-      ondragleave={() => onPanelDragLeave("watch")}
-      ondrop={(event) => onPanelDrop(event, "watch")}
-    >
-      <div class="panel-head">
-        <DragHead panelId="watch" kicker="WATCHLIST" title={`${watchlist.length} starred`} />
-      </div>
-      <div class="markets-list">
-        {#each watchRows as row (row.sym)}
-          <button type="button" onclick={() => openWatchRow(row)}>
-            <span>
-              {row.sym}
-              {#if row.basisBps !== null}
-                <small
-                  class="basis-tag"
-                  class:positive={row.basisBps >= 0}
-                  class:negative={row.basisBps < 0}
-                >{row.basisBps >= 0 ? "+" : ""}{formatNumber(row.basisBps, 0)}bp</small>
-              {/if}
-            </span>
-            <b>{formatPrice(row.price)}</b>
-            <em
-              class:positive={(row.change ?? 0) >= 0}
-              class:negative={(row.change ?? 0) < 0}
-            >{row.change !== null ? formatPercent(row.change) : row.hasPerp ? "perp" : ""}</em>
-          </button>
-        {:else}
-          <div class="empty">Star a market (☆ in the ticker) to track it here.</div>
-        {/each}
-      </div>
-    </section>
+    <WatchlistPanel
+      {watchlist}
+      {spotAssets}
+      {marketMids}
+      {markets}
+      onopenrow={openWatchRow}
+    />
 
-    <section
-      class="panel watchlist-panel"
-      role="group"
-      data-panel="screener"
-      style={panelStyle("screener", $panelOrder)}
-      class:dragging={$draggedPanel === "screener"}
-      class:drag-over={$dragOverPanel === "screener"}
-      ondragover={(event) => onPanelDragOver(event, "screener")}
-      ondragleave={() => onPanelDragLeave("screener")}
-      ondrop={(event) => onPanelDrop(event, "screener")}
-    >
-      <div class="panel-head">
-        <DragHead panelId="screener" kicker="SCREENER" title={`${screenRows.length} of ${spotAssets.length}`} />
-      </div>
-      <div class="screen-controls">
-        {#each [["movers", "Movers"], ["volume", "Volume"], ["cap", "Mkt cap"]] as [key, label] (key)}
-          <button
-            class="screen-chip"
-            class:active={screenSort === key}
-            type="button"
-            onclick={() => (screenSort = key as typeof screenSort)}
-          >{label}</button>
-        {/each}
-        <span class="screen-sep" aria-hidden="true"></span>
-        {#each [["all", "All"], ["crypto", "Crypto"], ["equities", "Stocks"], ["pre-ipo", "Pre-IPO"]] as [key, label] (key)}
-          <button
-            class="screen-chip"
-            class:active={screenHub === key}
-            type="button"
-            onclick={() => (screenHub = key as typeof screenHub)}
-          >{label}</button>
-        {/each}
-      </div>
-      <div class="markets-list spot-list">
-        {#each screenRows as asset (asset.assetId)}
-          <button
-            class:selected-market={tradeMode === "spot" && spotAsset?.assetId === asset.assetId}
-            type="button"
-            onclick={() => selectSpotAsset(asset)}
-          >
-            <span>{asset.symbol}</span>
-            <b>{formatPrice(asset.price)}</b>
-            <em
-              class:positive={(asset.change24hPct ?? 0) >= 0}
-              class:negative={(asset.change24hPct ?? 0) < 0}
-            >{formatPercent(asset.change24hPct)}</em>
-          </button>
-        {:else}
-          <div class="empty">Loading the catalog…</div>
-        {/each}
-      </div>
-    </section>
+    <ScreenerPanel
+      {spotAssets}
+      {tradeMode}
+      {spotAsset}
+      bind:sort={screenSort}
+      bind:hub={screenHub}
+      onselect={selectSpotAsset}
+    />
 
-    <section
-      class="panel watchlist-panel"
-      role="group"
-      data-panel="spot"
-      style={panelStyle("spot", $panelOrder)}
-      class:dragging={$draggedPanel === "spot"}
-      class:drag-over={$dragOverPanel === "spot"}
-      ondragover={(event) => onPanelDragOver(event, "spot")}
-      ondragleave={() => onPanelDragLeave("spot")}
-      ondrop={(event) => onPanelDrop(event, "spot")}
-    >
-      <div class="panel-head">
-        <DragHead panelId="spot" kicker="SPOT_MARKETS" title={`${spotAssets.length} tokens.xyz assets`} />
-        <span class="verdict-badge flat">Jupiter</span>
-      </div>
-      <div class="spot-search">
-        <input
-          bind:value={spotSearch}
-          placeholder="Search token…"
-          aria-label="Search spot assets"
-        />
-      </div>
-      <div class="markets-list spot-list">
-        {#each spotFiltered.slice(0, 30) as asset (asset.assetId)}
-          <button
-            class:selected-market={tradeMode === "spot" && spotAsset?.assetId === asset.assetId}
-            type="button"
-            onclick={() => selectSpotAsset(asset)}
-          >
-            {#if asset.imageUrl}
-              <img class="spot-logo" src={asset.imageUrl} alt="" loading="lazy" />
-            {:else}
-              <span class="spot-logo spot-logo-blank"></span>
-            {/if}
-            <span class="spot-row-sym">{asset.symbol}</span>
-            <b>{formatPrice(asset.price)}</b>
-            <em
-              class:positive={(asset.change24hPct ?? 0) >= 0}
-              class:negative={(asset.change24hPct ?? 0) < 0}
-            >{formatPercent(asset.change24hPct)}</em>
-            {#if tokenBalances[asset.mint]}
-              <small class="spot-held">●</small>
-            {/if}
-          </button>
-        {:else}
-          <div class="empty">
-            {spotSearch ? "No assets match." : "Loading tokens.xyz assets…"}
-          </div>
-        {/each}
-      </div>
-    </section>
+    <SpotMarketsPanel
+      {spotAssets}
+      {tokenBalances}
+      {tradeMode}
+      {spotAsset}
+      onselect={selectSpotAsset}
+    />
 
-    <section
-      id="section-markets"
-      class="panel watchlist-panel"
-      role="group"
-      data-panel="markets"
-      style={panelStyle("markets", $panelOrder)}
-      class:dragging={$draggedPanel === "markets"}
-      class:drag-over={$dragOverPanel === "markets"}
-      ondragover={(event) => onPanelDragOver(event, "markets")}
-      ondragleave={() => onPanelDragLeave("markets")}
-      ondrop={(event) => onPanelDrop(event, "markets")}
-    >
-      <div class="panel-head">
-        <DragHead panelId="markets" kicker="PHOENIX_MARKETS" title={`${markets.length} perp markets`} />
-      </div>
-      <AiReadLine read={scannerRead} />
-      <div class="markets-list">
-        {#each markets as market}
-          <button
-            class:selected-market={market.symbol === selectedSymbol}
-            type="button"
-            onclick={() => onMarketChange(market.symbol)}
-          >
-            <span>{market.symbol}</span>
-            <b>{formatPrice(marketMids[market.symbol])}</b>
-            <em>{market.marketStatus}</em>
-          </button>
-        {:else}
-          <div class="empty">Loading Phoenix market list.</div>
-        {/each}
-      </div>
-    </section>
+    <PhoenixMarketsPanel
+      {markets}
+      {marketMids}
+      {scannerRead}
+      {selectedSymbol}
+      onmarketchange={onMarketChange}
+    />
 
-    <section
-      class="panel watchlist-panel"
-      role="group"
-      data-panel="journal"
-      style={panelStyle("journal", $panelOrder)}
-      class:dragging={$draggedPanel === "journal"}
-      class:drag-over={$dragOverPanel === "journal"}
-      ondragover={(event) => onPanelDragOver(event, "journal")}
-      ondragleave={() => onPanelDragLeave("journal")}
-      ondrop={(event) => onPanelDrop(event, "journal")}
-    >
-      <div class="panel-head">
-        <DragHead panelId="journal" kicker="JOURNAL" title={`${journalToday.length} today · ${journalEntries.length} total`} />
-        {#if journalEntries.length > 0}
-          <button class="row-action" type="button" onclick={exportJournalCsv}>CSV</button>
-          <button class="row-action" type="button" onclick={wipeJournal}>Clear</button>
-        {/if}
-      </div>
-      {#if journalToday.length >= 2}
-        <AiReadLine read={recapRead} />
-      {/if}
-      <div class="journal-list">
-        {#each [...journalEntries].reverse().slice(0, 12) as entry (entry.ts)}
-          <div class="journal-row">
-            <span class="journal-time">{new Date(entry.ts).toISOString().slice(11, 16)}</span>
-            <span
-              class="journal-action"
-              class:positive={entry.action === "buy" || entry.action === "long" || entry.action === "limit-buy"}
-              class:negative={entry.action === "sell" || entry.action === "short" || entry.action === "limit-sell"}
-            >{entry.action.toUpperCase()}</span>
-            <span class="journal-sym">{entry.symbol}</span>
-            <b>{entry.notionalUsd !== null ? `$${formatNumber(entry.notionalUsd, 0)}` : "--"}{entry.leverage ? ` · ${entry.leverage}x` : ""}</b>
-            {#if entry.signature}
-              <a
-                class="journal-tx"
-                href={`https://solscan.io/tx/${entry.signature}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >tx</a>
-            {/if}
-          </div>
-        {:else}
-          <div class="empty">Orders you place are logged here, locally.</div>
-        {/each}
-      </div>
-    </section>
+    <JournalPanel {journalEntries} {journalToday} {recapRead} onwipe={wipeJournal} />
 
   </section>
-  <footer class="status-line" aria-label="Terminal status">
-    <span class="mono">{new Date(nowMs).toISOString().slice(11, 19)} UTC</span>
-    <span class="sl-sep" aria-hidden="true"></span>
-    <span>{tradeMode === "perps" ? selectedSymbol : (spotAsset?.symbol ?? "--")} · {sessionNote}</span>
-    <span class="sl-sep" aria-hidden="true"></span>
-    <span class:positive={streamHealth === "live"} class:warn-txt={streamHealth !== "live"}>WS {streamHealth}</span>
-    <span>RPC {rpcLatencyMs !== null ? `${rpcLatencyMs}ms` : "--"}</span>
-    {#if apiSlotLag !== null}
-      <span class:warn-txt={apiSlotLag > 150} title="Phoenix indexer slots behind the chain tip">
-        SYNC −{apiSlotLag}
-      </span>
-    {/if}
-    {#if lastTx}
-      <span class="sl-sep" aria-hidden="true"></span>
-      <span class="mono" class:warn-txt={lastTx.stage === "failed"}>
-        TX {lastTx.label} · {txStageText(lastTx, nowMs)}
-      </span>
-    {/if}
-    {#if armedHotkey}
-      <span class="sl-sep" aria-hidden="true"></span>
-      <span class="warn-txt">
-        {armedHotkey.key === "c"
-          ? `press C again to market-close ${selectedSymbol}`
-          : `press X again to cancel ${selectedSymbol} orders`}
-      </span>
-    {/if}
-    <span class="sl-grow" aria-hidden="true"></span>
-    {#if phoenixAuthority}
-      <!-- Money at a glance, always: the segment jumps to the perp desk. -->
-      <button
-        type="button"
-        class="sl-money"
-        title="Jump to positions"
-        onclick={() => scrollToSection("section-perp")}
-      >
-        <span>EQ ${formatNumber(accountEquityUsd, 0)}</span>
-        <span class:positive={accountUpnlUsd >= 0} class:negative={accountUpnlUsd < 0}>
-          uPNL {accountUpnlUsd >= 0 ? "+" : "-"}${formatNumber(Math.abs(accountUpnlUsd), 2)}
-        </span>
-        <span>FREE ${formatNumber(phoenixCollateral, 0)}</span>
-        {#if fundingPercent !== null}
-          <span>FUND {fundingPercent >= 0 ? "+" : ""}{formatNumber(fundingPercent, 3)}%/8h</span>
-        {/if}
-      </button>
-      <span class="sl-sep" aria-hidden="true"></span>
-    {/if}
-    {#if $privyAuth.walletAddress}
-      <span class="mono">{shortAddress($privyAuth.walletAddress)}</span>
-      <span class="sl-sep" aria-hidden="true"></span>
-    {/if}
-    <button type="button" class="sl-help" onclick={() => (cheatOpen = true)}>? shortcuts</button>
-  </footer>
+  <StatusLine
+    status={statusModel}
+    onshowshortcuts={() => (cheatOpen = true)}
+    onjumptopositions={() => scrollToSection("section-perp")}
+  />
 </main>
 
 <ToastStack />
@@ -5461,12 +4356,12 @@
       <div class="panel-head">
         <div>
           <p>TRADE_TICKET</p>
-          <h2>{tradeSide === "buy" ? "LONG" : "SHORT"} {selectedSymbol}-PERP</h2>
+          <h2>{$tradeSide === "buy" ? "LONG" : "SHORT"} {selectedSymbol}-PERP</h2>
         </div>
         <button class="modal-close" type="button" aria-label="Close" onclick={() => (tradeOpen = false)}>×</button>
       </div>
       <div class="modal-body">
-        {@render TicketForm()}
+        {@render perpTicketForm()}
       </div>
     </section>
   </div>
@@ -5502,783 +4397,98 @@
   />
 {/if}
 
-{#if fundsOpen}
-  <div class="modal-backdrop" role="presentation" onclick={() => (fundsOpen = false)}>
-    <section
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-      tabindex="-1"
-      onclick={(event) => event.stopPropagation()}
-      onkeydown={swallowKeysExceptEscape}
-    >
-      <div class="panel-head">
-        <div>
-          <p>ADD_FUNDS</p>
-          <h2>{usdcBalanceText}</h2>
-        </div>
-        <button class="modal-close" type="button" aria-label="Close" onclick={() => (fundsOpen = false)}>×</button>
-      </div>
-      <div class="modal-body">
-        <div class="side-toggle funds-tabs funds-tabs-3" role="group" aria-label="Funding method">
-          <button class:active={fundsTab === "receive"} type="button" onclick={() => (fundsTab = "receive")}>Receive</button>
-          <button class:active={fundsTab === "convert"} type="button" onclick={() => (fundsTab = "convert")}>Convert</button>
-          <button class:active={fundsTab === "phoenix"} type="button" onclick={() => (fundsTab = "phoenix")}>Phoenix</button>
-        </div>
+<FundsModal
+  open={fundsOpen}
+  bind:tab={fundsTab}
+  bind:depositAmount
+  bind:withdrawAmount
+  walletAddress={$privyAuth.walletAddress ?? null}
+  {walletCopied}
+  usdcBalance={{ text: usdcBalanceText, value: usdcBalanceValue }}
+  {solBalanceValue}
+  gasText={walletBalanceText}
+  phoenixCollateralUsd={phoenixTrader?.collateralUsd ?? null}
+  collateral={{
+    busy: collateralBusy,
+    error: collateralError,
+    signature: collateralSignature,
+  }}
+  onclose={() => (fundsOpen = false)}
+  ondeposit={() => void submitCollateral("deposit")}
+  onwithdraw={() => void submitCollateral("withdraw")}
+  oncopyaddress={copyWalletAddress}
+  onswap={performSwap}
+/>
 
-        {#if fundsTab === "receive"}
-          <p class="auth-lead">Send <b>USDC</b> or <b>SOL</b> on the <b>Solana</b> network to this address.</p>
-          {#if fundsQr}
-            <div class="funds-qr">{@html fundsQr}</div>
-          {/if}
-          <button
-            class="account-row copyable funds-address"
-            type="button"
-            disabled={!$privyAuth.walletAddress}
-            onclick={copyWalletAddress}
-          >
-            <span class="account-row-value mono">{$privyAuth.walletAddress ?? "—"}</span>
-            <span class="copy-hint" class:done={walletCopied}>{walletCopied ? "Copied" : "Copy"}</span>
-          </button>
-          <div class="ticket-preview">
-            <div class="preview-row"><span>USDC balance</span><b>{usdcBalanceText}</b></div>
-            <div class="preview-row"><span>SOL (gas)</span><b>{walletBalanceText}</b></div>
-          </div>
-          <p class="auth-note">Deposits appear automatically. Keep a little SOL for network fees.</p>
-        {:else if fundsTab === "convert"}
-          <p class="auth-lead">Swap <b>SOL → USDC</b> in your wallet via Jupiter (best route).</p>
-          <label>
-            Amount (SOL)
-            <input bind:value={swapSol} oninput={scheduleSwapQuote} inputmode="decimal" placeholder="0.5" />
-          </label>
-          <div class="ticket-preview">
-            <div class="preview-row">
-              <span>You receive</span>
-              <b>
-                {#if swapStatus === "quoting"}…{:else if swapQuote}{swapQuote.outUsdc.toFixed(2)} USDC{:else}—{/if}
-              </b>
-            </div>
-            <div class="preview-row">
-              <span>Price impact</span>
-              <b>{swapQuote ? `${(swapQuote.priceImpactPct * 100).toFixed(2)}%` : "--"}</b>
-            </div>
-            <div class="preview-row"><span>Wallet SOL</span><b>{walletBalanceText}</b></div>
-          </div>
-          {#if swapStatus === "done"}
-            <p class="auth-note">Swap submitted. <a class="news-domain" href={`https://solscan.io/tx/${swapSignature}`} target="_blank" rel="noopener noreferrer">View tx</a></p>
-          {/if}
-          {#if swapStatus === "error" && swapError}
-            <p class="auth-note error">{swapError}</p>
-          {/if}
-          <button
-            class="primary wide"
-            type="button"
-            disabled={!swapQuote || swapStatus === "swapping" || swapStatus === "quoting"}
-            onclick={executeSwap}
-          >
-            {#if swapStatus === "swapping"}<span class="spinner" aria-hidden="true"></span>{/if}
-            {swapStatus === "swapping" ? "Swapping…" : swapStatus === "done" ? "Swap again" : "Swap to USDC"}
-          </button>
-        {:else}
-          <p class="auth-lead">Move <b>USDC</b> between your wallet and your <b>Phoenix margin account</b>.</p>
-          <div class="ticket-preview">
-            <div class="preview-row"><span>Phoenix collateral</span><b>{phoenixTrader?.collateralUsd !== null && phoenixTrader?.collateralUsd !== undefined ? `$${formatNumber(phoenixTrader.collateralUsd, 2)}` : "--"}</b></div>
-            <div class="preview-row"><span>Wallet USDC</span><b>{usdcBalanceText}</b></div>
-            <div class="preview-row"><span>SOL (gas)</span><b>{walletBalanceText}</b></div>
-          </div>
-
-          {#if usdcBalanceValue !== null && usdcBalanceValue < 0.01}
-            <!-- Empty wallet: route into the funding flow instead of a dead button. -->
-            <div class="funding-guide">
-              <p class="auth-lead">
-                Your wallet has no USDC yet — fund it first, then deposit to Phoenix.
-              </p>
-              <div class="ticket-grid-2">
-                <button class="account-action accent" type="button" onclick={() => (fundsTab = "receive")}>
-                  Receive USDC
-                </button>
-                {#if (solBalanceValue ?? 0) > 0.015}
-                  <button class="account-action accent" type="button" onclick={() => (fundsTab = "convert")}>
-                    Convert {formatNumber(solBalanceValue, 2)} SOL
-                  </button>
-                {:else}
-                  <button class="account-action" type="button" onclick={() => (fundsTab = "receive")}>
-                    Send SOL for gas
-                  </button>
-                {/if}
-              </div>
-            </div>
-          {:else if (solBalanceValue ?? 0) < 0.002}
-            <div class="funding-guide">
-              <p class="auth-lead">
-                You have USDC but no <b>SOL for network fees</b> — send a little SOL first.
-              </p>
-              <button class="account-action accent wide" type="button" onclick={() => (fundsTab = "receive")}>
-                Receive SOL
-              </button>
-            </div>
-          {:else}
-            <div class="ticket-grid-2">
-              <label>
-                Deposit (USDC)
-                <input bind:value={depositAmount} inputmode="decimal" placeholder="100" />
-              </label>
-              <label>
-                Withdraw (USDC)
-                <input bind:value={withdrawAmount} inputmode="decimal" placeholder="50" />
-              </label>
-            </div>
-          {/if}
-          {#if collateralSignature}
-            <p class="auth-note">Submitted. <a class="news-domain" href={`https://solscan.io/tx/${collateralSignature}`} target="_blank" rel="noopener noreferrer">View tx</a></p>
-          {/if}
-          {#if collateralError}
-            <p class="auth-note error">{collateralError}</p>
-          {/if}
-          {#if (usdcBalanceValue === null || usdcBalanceValue >= 0.01) && (solBalanceValue ?? 0) >= 0.002}
-            <div class="ticket-grid-2">
-              <button
-                class="primary"
-                type="button"
-                disabled={collateralBusy || !Number(depositAmount)}
-                onclick={() => submitCollateral("deposit")}
-              >
-                {#if collateralBusy}<span class="spinner" aria-hidden="true"></span>{/if}
-                Deposit
-              </button>
-              <button
-                class="account-action"
-                type="button"
-                disabled={collateralBusy || !Number(withdrawAmount)}
-                onclick={() => submitCollateral("withdraw")}
-              >
-                Withdraw
-              </button>
-            </div>
-            <p class="auth-note">Withdrawals settle through the Phoenix withdraw queue.</p>
-          {/if}
-        {/if}
-      </div>
-    </section>
-  </div>
-{/if}
-
-{#snippet SpotTicketForm()}
-  {#if spotAsset}
-    <div class="spot-asset-head">
-      {#if spotAsset.imageUrl}
-        <img class="spot-logo" src={spotAsset.imageUrl} alt="" loading="lazy" />
-      {/if}
-      <div class="spot-asset-name">
-        <strong>{spotAsset.symbol}</strong>
-        <small>{spotAsset.name}</small>
-      </div>
-      <b
-        class:positive={(spotAsset.change24hPct ?? 0) >= 0}
-        class:negative={(spotAsset.change24hPct ?? 0) < 0}
-      >
-        {formatPrice(spotAsset.price)}
-      </b>
-    </div>
-
-    <div class="side-toggle" role="group" aria-label="Spot side">
-      <button
-        class:active={spotSide === "buy"}
-        type="button"
-        onclick={() => flipSpotSide("buy")}
-      >
-        Buy
-      </button>
-      <button
-        class:active={spotSide === "sell"}
-        type="button"
-        onclick={() => flipSpotSide("sell")}
-      >
-        Sell
-      </button>
-    </div>
-
-    <div class="side-toggle" role="group" aria-label="Spot order type">
-      <button
-        class:active={spotOrderType === "market"}
-        type="button"
-        onclick={() => (spotOrderType = "market")}
-      >
-        Market
-      </button>
-      <button
-        class:active={spotOrderType === "limit"}
-        type="button"
-        onclick={() => (spotOrderType = "limit")}
-      >
-        Limit
-      </button>
-    </div>
-
-    <div class="field">
-      <label>
-        {spotSide === "buy" ? "Spend (USDC)" : `Sell (${spotAsset.symbol})`}
-        <input
-          bind:value={spotAmount}
-          oninput={scheduleSpotQuote}
-          inputmode="decimal"
-          placeholder={spotSide === "buy" ? "25" : "0.5"}
-          use:stepInput={{ kind: spotSide === "buy" ? "usd" : "price" }}
-        />
-      </label>
-      <div class="chip-row" role="group" aria-label="Spot size presets">
-        {#each SPOT_CHIP_PCTS as pct (pct)}
-          <button
-            class="pct-chip"
-            type="button"
-            disabled={spotChipBalance <= 0}
-            onclick={() => setSpotAmountChip(pct)}
-          >
-            {pct}%
-          </button>
-        {/each}
-        <button
-          class="pct-chip"
-          type="button"
-          disabled={spotChipBalance <= 0}
-          onclick={() => setSpotAmountChip("max")}
-        >
-          Max
-        </button>
-      </div>
-    </div>
-
-    {#if spotOrderType === "limit"}
-      <label>
-        Limit price (USDC)
-        <input
-          bind:value={spotLimitPrice}
-          inputmode="decimal"
-          placeholder={formatPrice(spotAsset.price)}
-          use:stepInput={{ kind: "price" }}
-        />
-      </label>
-    {/if}
-
-    <div class="ticket-preview">
-      <div class="preview-row">
-        <span>You receive</span>
-        <b>
-          {#if spotOrderType === "limit"}
-            {#if Number(spotLimitPrice) > 0 && Number(spotAmount) > 0}
-              {spotSide === "buy"
-                ? `${formatNumber(Number(spotAmount) / Number(spotLimitPrice), 4)} ${spotAsset.symbol}`
-                : `${formatNumber(Number(spotAmount) * Number(spotLimitPrice), 2)} USDC`}
-            {:else}—{/if}
-          {:else if spotQuoteStatus === "quoting"}…{:else if spotQuote}
-            {formatNumber(spotQuote.outUi, spotSide === "buy" ? 4 : 2)}
-            {spotSide === "buy" ? spotAsset.symbol : "USDC"}
-          {:else}—{/if}
-        </b>
-      </div>
-      <div class="preview-row">
-        <span>Price impact</span>
-        <b class:negative={spotQuote ? spotQuote.priceImpactPct * 100 > 1 : false}>
-          {spotQuote ? `${(spotQuote.priceImpactPct * 100).toFixed(2)}%` : "--"}
-        </b>
-      </div>
-      <div class="preview-row">
-        <span>Wallet USDC</span>
-        <b>{usdcBalanceText}</b>
-      </div>
-      <div class="preview-row">
-        <span>You hold</span>
-        <b>{formatNumber(spotHolding, 4)} {spotAsset.symbol}</b>
-      </div>
-    </div>
-
-    <div class="ticket-actions">
-      <p class="ticket-status" class:error={spotQuoteStatus === "error"}>
-        {#if spotQuoteStatus === "error"}
-          {spotQuoteError}
-        {:else if spotSignature}
-          Swap submitted ·
-          <a class="news-domain" href={`https://solscan.io/tx/${spotSignature}`} target="_blank" rel="noopener noreferrer">view tx</a>
-        {:else}
-          &nbsp;
-        {/if}
-      </p>
-
-      {#if !phoenixAuthority}
-        <button class="primary wide" type="button" onclick={openAuthModal}>
-          Connect account to trade
-        </button>
-      {:else if spotOrderType === "limit"}
-        <button
-          class="primary wide"
-          class:armed={spotLimitArmed}
-          type="button"
-          disabled={!canSubmitSpot || spotLimitBlocked}
-          onclick={onSpotLimitSubmitClick}
-        >
-          {#if spotBusy}<span class="spinner" aria-hidden="true"></span>{/if}
-          {spotBusy
-            ? "Signing…"
-            : spotLimitBlocked
-              ? `Price ${formatNumber(Math.abs(spotLimitDeviationPct ?? 0), 1)}% from mark — check decimals`
-              : spotLimitArmed
-                ? `Confirm limit ${formatNumber(Math.abs(spotLimitDeviationPct ?? 0), 1)}% from mark`
-                : `Limit ${spotSide} ${spotAsset.symbol} @ ${spotLimitPrice || "—"}`}
-        </button>
-      {:else}
-        <button
-          class="primary wide"
-          type="button"
-          disabled={!canSubmitSpot}
-          onclick={executeSpotSwap}
-        >
-          {#if spotBusy}<span class="spinner" aria-hidden="true"></span>{/if}
-          {spotBusy
-            ? "Signing…"
-            : `${spotSide === "buy" ? "Buy" : "Sell"} ${spotAsset.symbol} · spot`}
-        </button>
-      {/if}
-    </div>
-
-    {#if triggerOrders.length > 0}
-      <div class="venue-section">Open limit orders</div>
-      {#each triggerOrders as order (order.orderKey)}
-        {@const view = triggerOrderView(order, spotAssets)}
-        {#if view}
-          <div class="venue-row">
-            <span class={view.side === "buy" ? "positive" : "negative"}>
-              LIMIT {view.side.toUpperCase()} {view.symbol}
-            </span>
-            <b>
-              {view.notionalUsd !== null ? `$${formatNumber(view.notionalUsd, 2)}` : "--"}
-              @ {formatPrice(view.limitPrice)}
-            </b>
-            <button
-              class="row-action"
-              type="button"
-              disabled={triggerBusy}
-              onclick={() => cancelSpotLimitOrder(order.orderKey)}
-            >
-              Cancel
-            </button>
-          </div>
-        {/if}
-      {/each}
-    {/if}
-  {:else}
-    <div class="empty">Loading spot assets…</div>
-  {/if}
+{#snippet spotTicketForm()}
+  <SpotTicketForm
+    ticket={spotTicket}
+    {spotAsset}
+    {spotAssets}
+    {spotChipBalance}
+    {usdcBalanceText}
+    {spotHolding}
+    {phoenixAuthority}
+    {spotBusy}
+    {spotSignature}
+    canSubmit={canSubmitSpot}
+    limitArmed={spotLimitArmed}
+    limitBlocked={spotLimitBlocked}
+    limitDeviationPct={spotLimitDeviationPct}
+    {triggerOrders}
+    {triggerBusy}
+    onswap={executeSpotSwap}
+    onlimitsubmit={onSpotLimitSubmitClick}
+    onopenauth={openAuthModal}
+    onchip={setSpotAmountChip}
+    oncancelorder={cancelSpotLimitOrder}
+  />
 {/snippet}
 
-{#snippet TicketForm()}
-    <div class="side-toggle" role="group" aria-label="Side">
-      <button class:active={tradeSide === "buy"} type="button" onclick={() => (tradeSide = "buy")}>Long</button>
-      <button class:active={tradeSide === "sell"} type="button" onclick={() => (tradeSide = "sell")}>Short</button>
-    </div>
-
-    <div class="ticket-grid-2">
-      <div class="field">
-        <label>
-          <span class="label-row">
-            {sizingMode === "usd" ? "Size (USD)" : "Risk (USD)"}
-            <button
-              class="mode-flip"
-              type="button"
-              onclick={() => (sizingMode = sizingMode === "usd" ? "risk" : "usd")}
-            >{sizingMode === "usd" ? "from stop →" : "← plain size"}</button>
-          </span>
-          {#if sizingMode === "usd"}
-            <input
-              bind:this={ticketSizeInput}
-              bind:value={tradeAmount}
-              inputmode="decimal"
-              use:stepInput={{ kind: "usd" }}
-              oninput={() => (sizeSource = "manual")}
-            />
-          {:else}
-            <input
-              bind:this={ticketSizeInput}
-              bind:value={tradeRiskUsd}
-              inputmode="decimal"
-              placeholder="25"
-              use:stepInput={{ kind: "usd" }}
-              oninput={() => (sizeSource = "manual")}
-            />
-          {/if}
-        </label>
-        {#if sizingMode === "usd"}
-          <div class="chip-row" role="group" aria-label="Quick size">
-            {#each SIZE_CHIP_PCTS as pct (pct)}
-              <button
-                class="pct-chip"
-                type="button"
-                disabled={phoenixCollateral <= 0}
-                onclick={() => setSizeChip(pct)}
-              >
-                {pct}%
-              </button>
-            {/each}
-            <button
-              class="pct-chip"
-              type="button"
-              disabled={phoenixCollateral <= 0}
-              onclick={() => setSizeChip("max")}
-            >
-              Max
-            </button>
-          </div>
-        {:else}
-          <div class="chip-row" role="group" aria-label="Quick risk">
-            {#each RISK_CHIP_PCTS as pct (pct)}
-              <button
-                class="pct-chip"
-                type="button"
-                disabled={accountEquityUsd <= 0}
-                onclick={() => setRiskChip(pct)}
-              >
-                {pct}%
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-      <label>
-        Leverage
-        <select bind:value={tradeLeverage}>
-          <option value={1}>1x</option>
-          <option value={2}>2x</option>
-          <option value={5}>5x</option>
-          <option value={10}>10x</option>
-          <option value={20}>20x</option>
-        </select>
-      </label>
-      <label>
-        Type
-        <select bind:value={tradeType}>
-          <option value="market">market</option>
-          <option value="limit">limit</option>
-        </select>
-      </label>
-      <label class:ticket-field-muted={tradeType !== "limit"}>
-        <span class="label-row">
-          Limit price
-          {#if limitCrossesBook}
-            <em class="field-note field-note-amber">crosses book — fills immediately as taker</em>
-          {/if}
-        </span>
-        <input
-          bind:value={tradeLimitPrice}
-          inputmode="decimal"
-          placeholder={formatPrice(latestPrice)}
-          disabled={tradeType !== "limit"}
-          use:stepInput={{ kind: "price" }}
-        />
-      </label>
-      <div class="field" class:field-error={tpWrongSide}>
-        <label>
-          <span class="label-row">
-            Take profit
-            {#if tpWrongSide}
-              <em class="field-note">{tradeSide === "buy" ? "above" : "below"} entry</em>
-            {/if}
-          </span>
-          <input
-            bind:value={tradeTakeProfit}
-            inputmode="decimal"
-            placeholder="optional"
-            use:stepInput={{ kind: "price" }}
-          />
-        </label>
-        <div class="chip-row" role="group" aria-label="Quick take profit">
-          {#each TP_CHIP_PCTS as pct (pct)}
-            <button
-              class="pct-chip"
-              type="button"
-              disabled={!triggerRefPrice}
-              onclick={() => setTakeProfitPct(pct)}
-            >
-              {tradeSide === "buy" ? "+" : "-"}{pct}%
-            </button>
-          {/each}
-        </div>
-      </div>
-      <div
-        class="field"
-        class:field-error={slWrongSide}
-        class:field-wanted={sizingMode === "risk" && !slSet}
-      >
-        <label>
-          <span class="label-row">
-            Stop loss
-            {#if slWrongSide}
-              <em class="field-note">{tradeSide === "buy" ? "below" : "above"} entry</em>
-            {:else if sizingMode === "risk" && !slSet}
-              <em class="field-note field-note-amber">sets your size</em>
-            {/if}
-          </span>
-          <input
-            bind:value={tradeStopLoss}
-            inputmode="decimal"
-            placeholder={sizingMode === "risk" ? "required" : "optional"}
-            use:stepInput={{ kind: "price" }}
-          />
-        </label>
-        <div class="chip-row" role="group" aria-label="Quick stop loss">
-          {#each SL_CHIP_PCTS as pct (pct)}
-            <button
-              class="pct-chip"
-              type="button"
-              disabled={!triggerRefPrice}
-              onclick={() => setStopLossPct(pct)}
-            >
-              {tradeSide === "buy" ? "-" : "+"}{pct}%
-            </button>
-          {/each}
-        </div>
-      </div>
-    </div>
-
-    {#if selectedPosition}
-      <!-- Only shown against a live position: without it a ticket sell opens
-           a second isolated position with fresh margin instead of reducing. -->
-      <label class="reduce-only">
-        <input type="checkbox" bind:checked={tradeReduceOnly} />
-        Reduce only — trade against the open {selectedPosition.size > 0 ? "long" : "short"}, no new margin
-      </label>
-    {/if}
-
-    <div class="ticket-preview">
-      {#if sizingMode === "risk"}
-        <div class="preview-row">
-          <span>Size from stop</span>
-          <b>{riskNotionalUsd !== null ? `$${formatNumber(riskNotionalUsd, 2)}` : "set a stop loss"}</b>
-        </div>
-      {/if}
-      <div class="preview-row"><span>Est. entry</span><b>{formatPrice(tradePreview?.entry)}</b></div>
-      <div class="preview-row">
-        <span>Slippage</span>
-        <b>{tradePreview?.slippageBps != null ? `${formatNumber(tradePreview.slippageBps, 1)} bps` : "--"}</b>
-      </div>
-      <div class="preview-row"><span>Spread</span><b>{formatNumber(spreadBps, 1)} bps</b></div>
-      <div class="preview-row">
-        <span>Funding / 8h</span>
-        <b class:positive={(fundingPercent ?? 0) >= 0} class:negative={(fundingPercent ?? 0) < 0}>
-          {formatPercent(fundingPercent)}
-        </b>
-      </div>
-      <div class="preview-row">
-        <span>Est. liquidation</span>
-        <b class="negative">{formatPrice(tradePreview?.liqPrice)}</b>
-        {#if tradePreview && !tradePreview.fillable}
-          <em class="warn ticket-thin-note">thin book</em>
-        {/if}
-      </div>
-      {#if tpPct !== null && !tpWrongSide}
-        <div class="preview-row">
-          <span>At take profit</span>
-          <b class="positive">
-            {tpPct >= 0 ? "+" : ""}{formatNumber(tpPct, 1)}%
-            {#if tpPnlUsd !== null}· +${formatNumber(Math.abs(tpPnlUsd), 2)}{/if}
-          </b>
-        </div>
-      {/if}
-      {#if slPct !== null && !slWrongSide}
-        <div class="preview-row">
-          <span>At stop loss</span>
-          <b class="negative">
-            {slPct >= 0 ? "+" : ""}{formatNumber(slPct, 1)}%
-            {#if slPnlUsd !== null}· -${formatNumber(Math.abs(slPnlUsd), 2)}{/if}
-          </b>
-        </div>
-      {/if}
-      <div class="preview-row">
-        <span>Margin required</span>
-        <b class:negative={needsPhoenixFunding}>
-          ${formatNumber(requiredMarginUsd, 2)}
-          {#if phoenixAuthority}· bal ${formatNumber(phoenixCollateral, 2)}{/if}
-        </b>
-      </div>
-    </div>
-
-    {#if tradeOpen || !stackedBook}
-      <!-- Compact ladder for tickets that can't see the full book (modal,
-           narrow-viewport tabs); the desktop stack has the real one above. -->
-      <div class="mini-book" aria-label="Order book preview">
-        {#each asks.slice(0, 5).reverse() as level (level.price)}
-          <button type="button" class="mini-row ask" onclick={() => prefillFromBook(level.price, "ask")}>
-            <span>{formatBookPrice(level.price)}</span>
-            <span>{formatNumber(bookLevelNotional(level), 0)}</span>
-          </button>
-        {/each}
-        <div class="mini-spread">
-          <span>{formatBookPrice(spread)}</span>
-          <em>spread</em>
-          <span>{formatNumber(spreadPercent, 3)}%</span>
-        </div>
-        {#each bids.slice(0, 5) as level (level.price)}
-          <button type="button" class="mini-row bid" onclick={() => prefillFromBook(level.price, "bid")}>
-            <span>{formatBookPrice(level.price)}</span>
-            <span>{formatNumber(bookLevelNotional(level), 0)}</span>
-          </button>
-        {:else}
-          <div class="mini-empty">book warming up</div>
-        {/each}
-      </div>
-    {/if}
-
-    <div class="ticket-actions">
-      {#if phoenixAuthority && phoenixTotalCollateral > 0}
-        <div
-          class="risk-strip"
-          class:warn={marginUsedPct > 60}
-          class:danger={marginUsedPct > 85 ||
-            (selectedLiqDistancePct !== null && selectedLiqDistancePct < 5)}
-        >
-          <span>EQ ${formatNumber(accountEquityUsd, 2)}</span>
-          <span>USED {formatNumber(marginUsedPct, 0)}%</span>
-          <span>
-            {selectedLiqDistancePct !== null
-              ? `LIQ Δ ${formatNumber(selectedLiqDistancePct, 1)}%`
-              : "LIQ --"}
-          </span>
-          <span
-            class:positive={accountUpnlUsd >= 0}
-            class:negative={accountUpnlUsd < 0}
-          >uPNL ${formatNumber(accountUpnlUsd, 2)}</span>
-        </div>
-      {/if}
-      <!-- Single reserved status line: error, live tx stage, tx link, or quiet hint. -->
-      <p
-        class="ticket-status"
-        class:error={Boolean(phoenixActionError)}
-        title={phoenixActionErrorDetail || undefined}
-      >
-        {#if phoenixActionError}
-          {phoenixActionError}
-          {#if phoenixActionRetry}
-            <button class="row-action" type="button" onclick={phoenixActionRetry}>Retry</button>
-          {/if}
-        {:else if orderStageEntry}
-          {txStageText(orderStageEntry, nowMs)}
-        {:else if lastTradeSignature}
-          Confirmed ·
-          <a class="news-domain" href={`https://solscan.io/tx/${lastTradeSignature}`} target="_blank" rel="noopener noreferrer">view tx</a>
-        {:else}
-          &nbsp;
-        {/if}
-      </p>
-
-      {#if !phoenixAuthority}
-        <button class="primary wide" type="button" onclick={openAuthModal}>
-          Connect account to trade
-        </button>
-      {:else if !phoenixStateKnown}
-        <!-- Account state still loading: show the real action, disabled —
-             never the "Deposit first" claim before we actually know. -->
-        <button class="primary wide" type="button" disabled>
-          <span class="spinner" aria-hidden="true"></span>
-          {tradeSide === "buy" ? "Long" : "Short"} {selectedSymbol}-PERP · {tradeLeverage}x
-        </button>
-      {:else if needsPhoenixFunding}
-        <button class="primary wide" type="button" onclick={openPhoenixFunding}>
-          Deposit first · ${formatNumber(Math.max(0, requiredMarginUsd - phoenixCollateral), 2)}
-        </button>
-      {:else}
-        <!-- Two-stage armed when the limit is far from mark; the reserved
-             wide button self-documents each state, no extra layout. -->
-        <button
-          class="primary wide"
-          class:armed={limitArmed}
-          type="button"
-          disabled={!canSubmitPerp || limitBlocked}
-          onclick={onPerpSubmitClick}
-        >
-          {#if orderBusy}<span class="spinner" aria-hidden="true"></span>{/if}
-          {orderBusy
-            ? orderStageEntry
-              ? txStageText(orderStageEntry, nowMs)
-              : "Simulating…"
-            : limitBlocked
-              ? `Price ${formatNumber(Math.abs(limitDeviationPct ?? 0), 1)}% from mark — check decimals`
-              : limitArmed
-                ? `Confirm limit ${formatNumber(Math.abs(limitDeviationPct ?? 0), 1)}% from mark`
-                : sizingMode === "risk" && !slSet
-                  ? "Set a stop loss to size"
-                  : !tradePreview
-                    ? "Enter a size"
-                    : `${tradeSide === "buy" ? "Long" : "Short"} ${selectedSymbol}-PERP · ${tradeLeverage}x`}
-        </button>
-      {/if}
-    </div>
-{/snippet}
-
-{#snippet BookLadder()}
-  <div class="book book-ladder">
-    <div class="book-header">
-      <span>Price USDC</span>
-      <span>Size USDC</span>
-      <span>Total USDC</span>
-    </div>
-
-    {#each visibleAskLevels as ask}
-      <button type="button" class="book-row ask" onclick={() => prefillFromBook(ask.price, "ask")}>
-        <span class="depth-bar" style={`width: ${depthWidth(ask, bookMaxNotional)}%;`}></span>
-        <span class="book-price">{formatBookPrice(ask.price)}</span>
-        <span>{formatNumber(bookLevelNotional(ask), 0)}</span>
-        <span>{formatNumber(bookLevelTotalNotional(ask), 0)}</span>
-      </button>
-    {/each}
-
-    <div class="spread-row">
-      <span>{formatBookPrice(spread)}</span>
-      <strong>Spread</strong>
-      <span>{formatNumber(spreadPercent, 3)}%</span>
-    </div>
-
-    {#each visibleBidLevels as bid}
-      <button type="button" class="book-row bid" onclick={() => prefillFromBook(bid.price, "bid")}>
-        <span class="depth-bar" style={`width: ${depthWidth(bid, bookMaxNotional)}%;`}></span>
-        <span class="book-price">{formatBookPrice(bid.price)}</span>
-        <span>{formatNumber(bookLevelNotional(bid), 0)}</span>
-        <span>{formatNumber(bookLevelTotalNotional(bid), 0)}</span>
-      </button>
-    {:else}
-      <div class="empty">No live order book levels loaded.</div>
-    {/each}
-  </div>
-{/snippet}
-
-{#snippet TapeFeed()}
-  <!-- Time & sales: the prints are the heartbeat. -->
-  <div class="tape" aria-label="Time and sales">
-    <div class="tape-header"><span>Time</span><span>Price</span><span>Size</span></div>
-    {#each trades.slice(0, 18) as tick (tick.seq)}
-      <div class="tape-row" class:bid={tick.side === "buy"} class:ask={tick.side === "sell"}>
-        <span>{new Date(tick.ts).toISOString().slice(11, 19)}</span>
-        <span>{formatBookPrice(tick.price)}</span>
-        <span>{formatNumber(tick.size * tick.price, 0)}</span>
-      </div>
-    {:else}
-      <div class="empty">No prints yet.</div>
-    {/each}
-  </div>
-{/snippet}
-
-{#snippet TickerStat(
-  label: string,
-  value: string,
-  width: string,
-  loading: boolean,
-  valueClass = "",
-)}
-  <div class="tk-stat" style={`min-width:${width}`}>
-    <span>{label}</span>
-    {#if loading}
-      <span class="skeleton skel-val" aria-hidden="true"></span>
-    {:else}
-      <b class={valueClass}>{value}</b>
-    {/if}
-  </div>
+{#snippet perpTicketForm()}
+  <TicketForm
+    ticket={perpTicket}
+    bind:sizeInput={ticketSizeInput}
+    {asks}
+    {bids}
+    {spread}
+    {spreadPercent}
+    {spreadBps}
+    {latestPrice}
+    {fundingPercent}
+    {selectedSymbol}
+    {selectedPosition}
+    {phoenixAuthority}
+    {phoenixStateKnown}
+    {phoenixCollateral}
+    {phoenixTotalCollateral}
+    {accountEquityUsd}
+    {marginUsedPct}
+    {selectedLiqDistancePct}
+    {accountUpnlUsd}
+    canSubmit={canSubmitPerp}
+    {orderBusy}
+    {orderStageEntry}
+    {nowMs}
+    {limitArmed}
+    {limitBlocked}
+    {limitDeviationPct}
+    {limitCrossesBook}
+    actionError={phoenixActionError}
+    actionErrorDetail={phoenixActionErrorDetail}
+    actionRetry={phoenixActionRetry}
+    {lastTradeSignature}
+    {txStageText}
+    {tradeOpen}
+    {stackedBook}
+    onsubmit={onPerpSubmitClick}
+    onopenauth={openAuthModal}
+    onopenfunds={openPhoenixFunding}
+    onpick={prefillFromBook}
+    onmanualsize={() => (sizeSource = "manual")}
+    onsizechip={setSizeChip}
+    onriskchip={setRiskChip}
+  />
 {/snippet}
 
 <style>
@@ -6304,43 +4514,6 @@
     padding: 0.5rem 0.75rem;
   }
 
-  .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem clamp(0.75rem, 2vw, 1.5rem);
-    border-bottom: 1px solid var(--line);
-    background: rgba(8, 10, 13, 0.9);
-    backdrop-filter: blur(16px);
-  }
-
-  .brand {
-    display: flex;
-    gap: 0.55rem;
-    align-items: center;
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .brand .brand-mark {
-    display: flex;
-    width: 1.05rem;
-    height: 1.05rem;
-    color: var(--ink);
-  }
-
-  .brand strong {
-    color: var(--muted);
-    font-weight: 500;
-  }
-
-  .topbar-actions,
   .chart-toolbar,
   .timeframe-tabs,
   .chart-market-tools,
@@ -6351,18 +4524,9 @@
     gap: 0.5rem;
   }
 
-  .topbar-actions {
-    justify-content: flex-end;
-    align-items: center;
-    min-width: 0;
-    min-height: 2.3rem;
-    flex-wrap: wrap;
-  }
-
   .chart-toolbar button,
   .chart-tools button,
-  .chart-footer button,
-  .book-row {
+  .chart-footer button {
     border: 1px solid var(--line);
     border-radius: 0;
     background: var(--surface-2);
@@ -6377,8 +4541,7 @@
 
   .chart-toolbar button:hover,
   .chart-tools button:hover,
-  .chart-footer button:hover,
-  .book-row:hover {
+  .chart-footer button:hover {
     transform: translateY(-1px);
     border-color: rgba(255, 77, 151, 0.55);
   }
@@ -6389,455 +4552,14 @@
     background: rgba(8, 10, 13, 0.86);
   }
 
-  /* ── Privy auth: topbar + account menu ───────────────────────────── */
-  .connect-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.74rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
-  .connect-status.error {
-    color: var(--red);
-  }
-
-  .connect-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
-    min-width: 11rem;
-    font-weight: 700;
-  }
-
-  .skel-price {
-    width: 8.5rem;
-    height: 1rem;
-    align-self: center;
-  }
-
-  .skel-val {
-    width: 2.6rem;
-    height: 0.78rem;
-    margin-top: 0.18rem;
-  }
-
-  .account-menu {
-    position: relative;
-  }
-
-  .account-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    border: 1px solid var(--line);
-    border-radius: 0;
-    background: var(--surface-2);
-    color: var(--ink);
-    min-height: 2.2rem;
-    padding: 0.3rem 0.6rem;
-    transition: border-color 160ms ease, background 160ms ease;
-  }
-
-  .account-trigger:hover {
-    border-color: rgba(255, 77, 151, 0.5);
-  }
-
-  .account-trigger-text {
-    display: grid;
-    text-align: left;
-    line-height: 1.15;
-    min-width: 0;
-  }
-
-  .account-trigger-text small {
-    color: var(--muted);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 13rem;
-  }
-
-  .account-trigger-text strong {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.8rem;
-    font-weight: 700;
-  }
-
-  .account-caret {
-    width: 0.4rem;
-    height: 0.4rem;
-    border-right: 2px solid var(--muted);
-    border-bottom: 2px solid var(--muted);
-    transform: translateY(-0.1rem) rotate(45deg);
-    transition: transform 160ms ease;
-  }
-
-  .account-caret.open {
-    transform: translateY(0.05rem) rotate(-135deg);
-  }
-
-  .account-dropdown {
-    position: absolute;
-    top: calc(100% + 0.45rem);
-    right: 0;
-    z-index: 40;
-    width: min(20rem, calc(100vw - 1.5rem));
-    display: grid;
-    gap: 0.5rem;
-    padding: 0.7rem;
-    border: 1px solid var(--line);
-    border-radius: 0;
-    background: var(--surface);
-    box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.5);
-  }
-
-  .account-dropdown-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding-bottom: 0.55rem;
-    border-bottom: 1px solid var(--line-soft);
-  }
-
-  .account-identity {
-    display: grid;
-    gap: 0.1rem;
-    min-width: 0;
-  }
-
-  .account-identity small {
-    color: var(--faint);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .account-identity strong {
-    font-size: 0.82rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* .wallet-badge lives in terminal.css — the account menu here and the
-     AuthModal component both render it. */
-
-  .account-row {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    border: 1px solid var(--line-soft);
-    border-radius: 0;
-    background: rgba(255, 255, 255, 0.02);
-    padding: 0.45rem 0.55rem;
-    text-align: left;
-  }
-
-  button.account-row {
-    color: var(--ink);
-  }
-
-  button.account-row.copyable:hover:not(:disabled) {
-    border-color: rgba(255, 77, 151, 0.45);
-    background: rgba(255, 77, 151, 0.06);
-  }
-
-  .account-row-label {
-    color: var(--muted);
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .account-row-value {
-    text-align: right;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Wallet/phoenix split under the combined Funds figure. */
-  .funds-split {
-    display: block;
-    color: var(--faint);
-    font-size: 0.64rem;
-  }
-
-  .copy-hint {
-    font-size: 0.62rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--muted);
-  }
-
-  .copy-hint.done {
-    color: var(--accent);
-  }
-
-  /* Two-stage flatten in the PERP_DESK head: reserved width so the
-     FLATTEN ↔ Confirm flatten relabel never shifts the layout. */
-  .flatten-btn {
-    min-width: 7.5rem;
-    letter-spacing: 0.05em;
-  }
-
-  .flatten-btn.armed {
-    color: var(--down);
-    border-color: rgba(255, 90, 106, 0.6);
-  }
-
-  .account-dropdown-note {
-    margin: 0;
-    font-size: 0.72rem;
-  }
-
-  .account-dropdown-note.warn {
-    color: var(--amber);
-  }
-
-  .account-action {
-    border: 1px solid var(--line);
-    border-radius: 0;
-    background: var(--surface-2);
-    color: var(--ink);
-    min-height: 2.1rem;
-    font-weight: 700;
-  }
-
-  .account-action.danger {
-    color: var(--red);
-    border-color: rgba(240, 107, 99, 0.35);
-  }
-
-  .account-action.danger:hover:not(:disabled) {
-    background: rgba(240, 107, 99, 0.1);
-    border-color: rgba(240, 107, 99, 0.6);
-  }
-
-  .account-action.accent {
-    color: var(--accent);
-    background: var(--accent-soft);
-    border-color: rgba(255, 77, 151, 0.4);
-  }
-
-  .account-action.accent:hover:not(:disabled) {
-    background: rgba(255, 77, 151, 0.2);
-  }
-
-  /* ── Add-funds modal ──────────────────────────────────────────────── */
-  /* .side-toggle.funds-tabs / .funds-tabs-3 live in terminal.css (cascade-
-     order-sensitive vs the .side-toggle first/last active rules there). */
-  .funding-guide {
-    display: grid;
-    gap: 0.6rem;
-    border: 1px dashed var(--line);
-    border-radius: 0;
-    padding: 0.75rem;
-  }
-
-  .funding-guide .auth-lead {
-    margin: 0;
-  }
-
-  /* ── Phoenix venue (account strip + position/order rows) ─────────── */
-  .venue-strip {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr auto;
-    gap: 0.5rem;
-    align-items: center;
-    margin: 0 0.65rem 0.4rem;
-    padding: 0.5rem 0.6rem;
-    border: 1px solid var(--line-soft);
-    border-radius: 0;
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .venue-strip span {
-    display: block;
-    color: var(--faint);
-    font-size: 0.58rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .venue-strip b {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-variant-numeric: tabular-nums;
-    font-size: 0.8rem;
-  }
-
-  /* Day P&L sparkline rides the stat value line (svg lives in Spark.svelte). */
-  .venue-strip :global(.spark) {
-    vertical-align: -0.25rem;
-  }
-
-  .venue-note {
-    margin: 0 0.75rem 0.4rem;
-  }
-
-  /* ── Position cards ──────────────────────────────────────────────── */
-  .pos-card {
-    display: grid;
-    gap: 0.3rem;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--line-soft);
-  }
-
-  .pos-card-top {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-  }
-
-  .pos-side {
-    font-family: ui-monospace, monospace;
-    font-size: 0.62rem;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-    border: 1px solid currentcolor;
-    padding: 0.05rem 0.3rem;
-  }
-
-  .pos-symbol {
-    border: 0;
-    background: transparent;
-    color: var(--ink);
-    font-weight: 800;
-    font-size: 0.85rem;
-    padding: 0;
-    cursor: pointer;
-  }
-
-  .pos-symbol:hover {
-    color: var(--accent);
-  }
-
-  .pos-card-top b {
-    font-size: 0.76rem;
-    color: var(--muted);
-    font-weight: 500;
-  }
-
-  .pos-card-top em {
-    margin-left: auto;
-    font-style: normal;
-    font-size: 0.8rem;
-    font-weight: 700;
-  }
-
-  .pos-card-mid {
-    display: flex;
-    gap: 0.9rem;
-    font-size: 0.68rem;
-    color: var(--muted);
-    flex-wrap: wrap;
-  }
-
-  /* Optimistic row while the indexer catches up — visibly interim. */
-  .pos-pending {
-    color: var(--faint);
-  }
-
-  .pos-symbol-static {
-    color: var(--muted);
-    font-weight: 800;
-    font-size: 0.85rem;
-  }
-
-  .pos-card-bottom {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  /* Partial-close chips: fixed-size, never fight the liq bar for width. */
-  .pos-card-bottom .pct-chip {
-    flex: 0 0 auto;
-    min-width: 2.2rem;
-  }
-
-  /* Inline margin top-up editor under the liq bar. */
-  .margin-add {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.68rem;
-  }
-
-  .margin-add input {
-    width: 6rem;
-    min-height: 1.6rem;
-    padding: 0.15rem 0.4rem;
-    border: 1px solid var(--line);
-    border-radius: 0;
-    background: var(--surface-2);
-    color: var(--ink);
-    font: inherit;
-  }
-
-  .margin-add-note {
-    color: var(--faint);
-    font-size: 0.62rem;
-  }
-
-  .liq-bar {
-    position: relative;
-    flex: 1;
-    height: 1.05rem;
-    border: 1px solid var(--line-soft);
-    overflow: hidden;
-  }
-
-  .liq-bar i {
-    position: absolute;
-    inset: 0 auto 0 0;
-    background: rgba(44, 233, 127, 0.14);
-  }
-
-  .liq-bar.warn i {
-    background: rgba(255, 180, 84, 0.18);
-  }
-
-  .liq-bar.danger i {
-    background: rgba(255, 90, 106, 0.22);
-  }
-
-  .liq-bar span {
-    position: relative;
-    display: block;
-    padding: 0.08rem 0.4rem;
-    font-size: 0.62rem;
-    color: var(--muted);
-  }
-
-  .liq-bar.warn span { color: var(--amber); }
-  .liq-bar.danger span { color: var(--down); }
-
-  .liq-none {
-    flex: 1;
-    font-size: 0.62rem;
-    color: var(--faint);
-  }
-
-  .pos-total {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.8rem;
-    padding: 0.4rem 0.75rem;
-    font-size: 0.68rem;
-    color: var(--muted);
-    border-bottom: 1px solid var(--line-soft);
-  }
+  /* ── Privy auth: topbar + account menu markup/styles live in
+     components/Topbar.svelte; the shared rows/actions (.account-row*,
+     .copy-hint, .account-action) moved to terminal.css — the add-funds
+     modal renders them too. ── */
+
+  /* ── Phoenix venue (venue strip / position cards / open orders) —
+     markup + styles live in components/PerpDeskPanel.svelte; the shared
+     venue-section/venue-row rows stay in terminal.css ── */
 
   /* ── Chart overlay position badge ────────────────────────────────── */
   .pos-badge {
@@ -6862,31 +4584,6 @@
     padding-inline: 0.35rem;
   }
 
-  .funds-qr {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.85rem;
-    border: 1px solid var(--line-soft);
-    border-radius: 0;
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .funds-qr :global(svg) {
-    width: 9.5rem;
-    height: 9.5rem;
-  }
-
-  .funds-address {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .funds-address .account-row-value {
-    text-align: left;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    font-size: 0.72rem;
-  }
 
   .dashboard {
     display: grid;
@@ -6918,39 +4615,17 @@
     height: var(--market-panel-height, clamp(30rem, calc(100dvh - 13.4rem), 72rem));
   }
 
-  .perp-panel {
+  .macro-panel {
     grid-column: span 4;
-  }
-
-  .macro-panel,
-  .watchlist-panel {
-    grid-column: span 4;
-  }
-
-  .monitor-panel {
-    grid-column: span 4;
-    display: flex;
-    flex-direction: column;
-    max-height: 26rem;
   }
 
   /* Base select/input/label element rules live in terminal.css — scoped
      copies here would stop matching the same elements rendered inside
      extracted components (AuthModal & co). */
 
-  /* Panel-header dialect on ticket labels; inputs keep body sizing. */
-  .panel-ticket label {
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 0.62rem;
-  }
-
-  .panel-ticket label input,
-  .panel-ticket label select {
-    text-transform: none;
-    letter-spacing: normal;
-    font-size: 0.85rem;
-  }
+  /* The .panel-ticket label dialect rules live in terminal.css — the
+     wrapper is page markup while the labels render inside
+     TicketForm/SpotTicketForm, so a scoped compound would stop matching. */
 
   .bid {
     color: #8decc3;
@@ -7032,28 +4707,6 @@
     color: var(--faint);
     border: 1px solid var(--line);
     padding: 0 0.3rem;
-  }
-
-  /* Ticker symbol doubles as a palette opener. */
-  .ticker-market {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.3rem;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    padding: 0;
-    cursor: pointer;
-    font: inherit;
-  }
-
-  .ticker-caret {
-    color: var(--faint);
-    font-size: 0.7rem;
-  }
-
-  .ticker-market:hover .ticker-caret {
-    color: var(--ink);
   }
 
   .price-mode-toggle {
@@ -7210,52 +4863,6 @@
     font-weight: 500;
   }
 
-  .book,
-  .table,
-  .markets-list {
-    display: grid;
-    gap: 0.15rem;
-    padding: 0.65rem;
-  }
-
-  .book-row,
-  .table-row,
-  .markets-list button {
-    display: grid;
-    grid-template-columns: 3rem minmax(0, 1fr) 4.25rem 4rem;
-    align-items: center;
-    gap: 0.45rem;
-    width: 100%;
-    min-height: 1.8rem;
-    font-size: 0.75rem;
-    text-align: left;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-
-  .markets-list {
-    max-height: 16rem;
-    overflow: auto;
-  }
-
-  .markets-list button {
-    grid-template-columns: 4.5rem minmax(0, 1fr) auto;
-    border: 0;
-    border-bottom: 1px solid var(--line-soft);
-    background: transparent;
-    padding: 0.42rem 0.45rem;
-    color: var(--muted);
-  }
-
-  .markets-list button:hover,
-  .markets-list button.selected-market {
-    color: var(--ink);
-    background: rgba(255, 77, 151, 0.08);
-  }
-
-  .markets-list b {
-    color: var(--ink);
-  }
-
   /* Right-rail tabs: Order Book | Trade (underline indicator). */
   .book-tabs {
     display: grid;
@@ -7315,7 +4922,12 @@
     min-height: min(12rem, 30%);
   }
 
-  .book-stack .tape {
+  /* Stacked book slot: `.book-stack` is page markup while `.tape` is
+     Tape.svelte's root, so the compound spans the component boundary.
+     The page-scoped :global keeps specificity at 0,3,0 — beating the
+     component's own `.tape { max-height: 12rem }` regardless of CSS
+     bundle order — so the tape fills the ladder slot when stacked. */
+  .book-stack :global(.tape) {
     flex: 1;
     max-height: none;
   }
@@ -7326,18 +4938,8 @@
     border-top: 1px solid var(--line-soft);
   }
 
-  /* The primary action never requires scrolling: status + submit stick to
-     the bottom of the ticket scroller on an opaque footer. */
-  .ticket-actions {
-    position: sticky;
-    bottom: 0;
-    display: grid;
-    gap: 0.45rem;
-    margin: 0 -0.65rem;
-    padding: 0.35rem 0.65rem 0.6rem;
-    background: var(--surface);
-    border-top: 1px solid var(--line-soft);
-  }
+  /* .ticket-actions (sticky status + submit footer) lives in
+     TicketForm.svelte / SpotTicketForm.svelte. */
 
   /* ── Spot venue ───────────────────────────────────────────────────── */
   /* Venue switch: the selection thumb physically slides to the chosen
@@ -7416,76 +5018,9 @@
     line-height: 1.5;
   }
 
-  .spot-asset-head {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.55rem;
-    padding: 0.2rem 0.1rem;
-  }
-
-  .spot-logo {
-    width: 1.4rem;
-    height: 1.4rem;
-    border-radius: 50%;
-    background: var(--surface-2);
-    object-fit: cover;
-  }
-
-  .spot-logo-blank {
-    display: inline-block;
-  }
-
-  .spot-asset-name {
-    display: grid;
-    line-height: 1.15;
-    min-width: 0;
-  }
-
-  .spot-asset-name strong {
-    font-size: 0.88rem;
-  }
-
-  .spot-asset-name small {
-    color: var(--muted);
-    font-size: 0.66rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .spot-asset-head > b {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .spot-search {
-    padding: 0.5rem 0.65rem 0.1rem;
-  }
-
-  .spot-search input {
-    min-height: 1.9rem;
-    font-size: 0.76rem;
-  }
-
-  .spot-list button {
-    grid-template-columns: auto 3.6rem minmax(0, 1fr) auto auto;
-  }
-
-  .spot-list .spot-logo {
-    width: 1.1rem;
-    height: 1.1rem;
-  }
-
-  .spot-row-sym {
-    font-weight: 800;
-  }
-
-  .spot-held {
-    color: var(--accent);
-    font-size: 0.5rem;
-  }
-
+  /* .spot-asset-head / .spot-asset-name moved with the spot ticket into
+     SpotTicketForm.svelte (.spot-logo stays in terminal.css — shared with
+     the spot list rendered inside SpotMarketsPanel.svelte). */
 
   .orderbook-controls {
     display: grid;
@@ -7592,323 +5127,17 @@
     width: 0.5rem;
   }
 
-  .orderbook-panel .book {
-    min-height: 0;
-    overflow: auto;
-  }
-
-  .orderbook-panel .book-ladder {
-    flex: 1;
-    align-content: start;
-    gap: 0.06rem;
-    padding: 0.28rem 0.46rem 0.42rem;
-  }
-
-  .book-header,
-  .book-ladder .book-row,
-  .spread-row {
-    display: grid;
-    grid-template-columns: minmax(4.1rem, 1fr) minmax(4.1rem, 1fr) minmax(4.1rem, 1fr);
-    align-items: center;
-    gap: 0.32rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .book-header {
-    min-height: 1.18rem;
-    color: #9ca9bd;
-    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-    font-size: 0.64rem;
-    line-height: 1;
-  }
-
-  .book-header span:nth-child(2),
-  .book-header span:nth-child(3),
-  .book-ladder .book-row span:nth-child(3),
-  .book-ladder .book-row span:nth-child(4),
-  .spread-row span:last-child {
-    text-align: right;
-  }
-
-  .book-ladder .book-row {
-    position: relative;
-    min-height: 1.08rem;
-    overflow: hidden;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: var(--ink);
-    padding: 0 0.3rem;
-    font-size: 0.64rem;
-    line-height: 1;
-  }
-
-  .book-ladder .book-row:hover {
-    border-color: transparent;
-    background: rgba(255, 255, 255, 0.035);
-    transform: none;
-  }
-
-  .book-ladder .book-row span:not(.depth-bar) {
-    position: relative;
-    z-index: 1;
-  }
-
-  .book-ladder .book-price {
-    font-weight: 800;
-  }
-
-  .book-ladder .book-row.ask .book-price {
-    color: var(--down);
-  }
-
-  .book-ladder .book-row.bid .book-price {
-    color: var(--up);
-  }
-
-  .depth-bar {
-    position: absolute;
-    top: 2px;
-    bottom: 2px;
-    left: 0;
-    z-index: 0;
-    border-radius: 0;
-    pointer-events: none;
-  }
-
-  .book-ladder .book-row.ask .depth-bar {
-    background: rgba(255, 90, 106, 0.24);
-  }
-
-  .book-ladder .book-row.bid .depth-bar {
-    background: rgba(44, 233, 127, 0.22);
-  }
-
-  .spread-row {
-    min-height: 1.28rem;
-    margin: 0.1rem 0;
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--ink);
-    padding: 0 0.3rem;
-    font-size: 0.64rem;
-    line-height: 1;
-  }
-
-  .spread-row strong {
-    text-align: center;
-  }
-
-  .table-row {
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
-    padding: 0.5rem 0.5rem;
-    border-bottom: 1px solid var(--line-soft);
-    color: var(--muted);
-  }
-
-  .table-row b {
-    color: var(--ink);
-  }
-
-  .warn {
-    color: var(--amber);
-  }
-
   /* Market-palette styles live in components/CommandPalette.svelte. */
 
-  /* Reserved single-line status (error / tx link / blank). */
-  .ticket-status {
-    margin: 0;
-    min-height: 1.2rem;
-    font-size: 0.74rem;
-    color: var(--muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .ticket-status.error {
-    color: var(--red);
-  }
-
-  .ticket-thin-note {
-    margin-left: 0.4rem;
-    font-style: normal;
-    font-size: 0.62rem;
-    text-transform: uppercase;
-  }
-
-  .ticket-field-muted {
-    opacity: 0.45;
-    transition: opacity 160ms ease;
-  }
+  /* .ticket-status / .ticket-thin-note / .ticket-field-muted (and the
+     ticket's amber .warn) moved into TicketForm/SpotTicketForm. */
 
   /* Auth-modal styles live in components/AuthModal.svelte; the shared
      bits (.wide, .auth-lead, .wallet-badge) moved to terminal.css. */
 
-  .market-rail {
-    /* Sticky on every width: prices/funding stay in view while scrolling.
-       Desktop pins below the sticky topbar (measured height via the inline
-       var); the sub-1100px override returns it to the viewport top where
-       the topbar goes static. */
-    position: sticky;
-    top: var(--rail-top, 0px);
-    z-index: 15;
-    background: rgba(8, 10, 13, 0.92);
-    backdrop-filter: blur(16px);
-    border-bottom: 1px solid var(--line-soft);
-  }
-
-  .ticker {
-    display: flex;
-    align-items: center;
-    gap: clamp(0.6rem, 2vw, 1.4rem);
-    padding: 0.5rem clamp(0.75rem, 2vw, 1.25rem);
-    overflow-x: auto;
-    scrollbar-width: thin;
-    white-space: nowrap;
-  }
-
-  .ticker-symbol {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    flex: 0 0 auto;
-  }
-
-  .ticker-symbol strong {
-    font-size: 0.9rem;
-    font-weight: 800;
-    letter-spacing: 0.01em;
-  }
-
-  .ticker-health {
-    display: inline-block;
-    min-width: 4.7rem;
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
-  }
-
-  .stream-dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 50%;
-    background: var(--faint);
-    box-shadow: 0 0 0 0 rgba(255, 77, 151, 0.5);
-  }
-
-  .stream-dot.live {
-    background: var(--up);
-    animation: pulse 2s ease-out infinite;
-  }
-
-  .stream-dot.connecting {
-    background: var(--amber);
-  }
-
-  .stream-dot.stale {
-    background: var(--amber);
-  }
-
-  .stream-dot.offline {
-    background: var(--red);
-  }
-
-  @keyframes pulse {
-    0% {
-      box-shadow: 0 0 0 0 rgba(44, 233, 127, 0.45);
-    }
-    70% {
-      box-shadow: 0 0 0 0.4rem rgba(44, 233, 127, 0);
-    }
-    100% {
-      box-shadow: 0 0 0 0 rgba(44, 233, 127, 0);
-    }
-  }
-
-  .ticker-price {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    flex: 0 0 auto;
-    min-width: 11rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .ticker-price b {
-    font-size: 1.05rem;
-    font-weight: 800;
-  }
-
-  .ticker-price em {
-    font-size: 0.78rem;
-    font-style: normal;
-    font-weight: 600;
-  }
-
-  .ticker-stats {
-    display: inline-flex;
-    align-items: center;
-    gap: clamp(0.6rem, 1.8vw, 1.35rem);
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .ticker-stats div {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 0.05rem;
-    line-height: 1.1;
-  }
-
-  .ticker-stats span {
-    font-size: 0.58rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--faint);
-  }
-
-  .ticker-stats b {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-variant-numeric: tabular-nums;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--ink);
-  }
-
-  .section-nav {
-    display: none;
-    gap: 0.35rem;
-    padding: 0.4rem clamp(0.75rem, 2vw, 1.25rem);
-    overflow-x: auto;
-    scrollbar-width: none;
-    border-top: 1px solid var(--line-soft);
-  }
-
-  .section-nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .section-nav button {
-    flex: 0 0 auto;
-    border: 1px solid var(--line);
-    border-radius: 0;
-    background: var(--surface-2);
-    color: var(--muted);
-    font-size: 0.74rem;
-    font-weight: 600;
-    min-height: 2rem;
-    padding: 0.3rem 0.85rem;
-  }
-
-  .section-nav button.active {
-    color: #04130d;
-    background: var(--accent);
-    border-color: var(--accent);
-  }
+  /* .stream-dot moved with its last page consumer, the topbar connect
+     status (Topbar.svelte renders only the offline variant; the unused
+     live/connecting/stale variants + pulse keyframes were dropped). */
 
   /* The :focus-visible outline lives in terminal.css so it also reaches
      controls rendered inside extracted components. */
@@ -7923,31 +5152,8 @@
     }
   }
 
-  /* ── Macro chips + tone palette (panel body lives in MacroPanel.svelte;
-     the badge/chip/tones stay: spot panel + account dropdown use them) ── */
-  .verdict-badge {
-    flex: 0 0 auto;
-    border-radius: 0;
-    padding: 0.2rem 0.55rem;
-    font-size: 0.62rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-
-  .macro-chip {
-    justify-self: end;
-    border-radius: 0;
-    padding: 0.1rem 0.5rem;
-    font-size: 0.6rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-    border: 1px solid transparent;
-  }
+  /* ── Tone palette (macro-chip copies live in MacroPanel/Topbar;
+     verdict-badge copies live in MacroPanel/SpotMarketsPanel) ── */
 
   /* Tone palette shared by badge / chip (sparkline strokes live in Spark.svelte) */
   .up {
@@ -7965,419 +5171,34 @@
     stroke: var(--amber);
   }
 
-  .macro-chip.up {
-    color: var(--up);
-    background: var(--up-soft);
-    border-color: rgba(44, 233, 127, 0.35);
-  }
+  /* ── Ambient risk strip + mini book: moved with the perp ticket into
+     components/TicketForm.svelte ── */
 
-  .macro-chip.down {
-    color: var(--red);
-    background: rgba(240, 107, 99, 0.12);
-    border-color: rgba(240, 107, 99, 0.35);
-  }
-
-  .macro-chip.warn {
-    color: var(--amber);
-    background: rgba(228, 173, 79, 0.12);
-    border-color: rgba(228, 173, 79, 0.35);
-  }
-
-  .verdict-badge.flat,
-  .macro-chip.flat {
-    color: var(--muted);
-    background: var(--surface-2);
-    border-color: var(--line);
-  }
-
-  /* ── Ambient risk strip ──────────────────────────────────────────── */
-  .risk-strip {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.25rem 0.45rem;
-    border: 1px solid var(--line-soft);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.64rem;
-    color: var(--muted);
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .risk-strip.warn {
-    border-color: rgba(255, 180, 84, 0.5);
-    color: var(--amber);
-  }
-
-  .risk-strip.danger {
-    border-color: rgba(255, 90, 106, 0.6);
-    color: var(--down);
-  }
-
-  /* ── Mini book inside the ticket ─────────────────────────────────── */
-  .mini-book {
-    border: 1px solid var(--line-soft);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.7rem;
-  }
-
-  .mini-row {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-    border: 0;
-    background: transparent;
-    padding: 0.14rem 0.5rem;
-    cursor: pointer;
-    font: inherit;
-  }
-
-  .mini-row.ask { color: var(--down); }
-  .mini-row.bid { color: var(--up); }
-  .mini-row:hover { background: rgba(255, 255, 255, 0.04); }
-  .mini-row span:last-child { color: var(--muted); }
-
-  .mini-spread {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.14rem 0.5rem;
-    border-block: 1px solid var(--line-soft);
-    color: var(--muted);
-  }
-
-  .mini-spread em { font-style: normal; color: var(--faint); }
-  .mini-empty { padding: 0.4rem 0.5rem; color: var(--faint); }
-
-  /* ── Time & sales ────────────────────────────────────────────────── */
-  .tape {
-    border-top: 1px solid var(--line-soft);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.68rem;
-    overflow-y: auto;
-    max-height: 12rem;
-  }
-
-  .tape-header,
-  .tape-row {
-    display: grid;
-    grid-template-columns: 4.6rem 1fr 4.5rem;
-    gap: 0.6rem;
-    padding: 0.12rem 0.9rem;
-  }
-
-  .tape-header {
-    color: var(--faint);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-size: 0.6rem;
-    position: sticky;
-    top: 0;
-    background: var(--surface);
-  }
-
-  .tape-row span:first-child { color: var(--faint); }
-  .tape-row.bid span:nth-child(2) { color: var(--up); }
-  .tape-row.ask span:nth-child(2) { color: var(--down); }
-  .tape-row span:last-child { text-align: right; color: var(--muted); }
-
-  /* ── Markets monitor panel ───────────────────────────────────────── */
-  .monitor-sorts {
-    display: flex;
-    gap: 0.2rem;
-  }
-
-  .monitor-sorts button {
-    border: 0;
-    background: transparent;
-    color: var(--faint);
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.2rem 0.35rem;
-    cursor: pointer;
-  }
-
-  .monitor-sorts button.active { color: var(--accent); }
-
-  .monitor-list {
-    overflow-y: auto;
-    min-height: 0;
-    flex: 1;
-  }
-
-  .monitor-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 5.5rem 4.5rem 6rem;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.3rem 0.9rem;
-    border: 0;
-    border-bottom: 1px solid var(--line-soft);
-    background: transparent;
-    color: var(--ink);
-    font-size: 0.78rem;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .monitor-row:hover { background: rgba(255, 77, 151, 0.04); }
-  .monitor-row.active { box-shadow: inset 2px 0 0 var(--accent); background: var(--surface-2); }
-
-  .monitor-head {
-    color: var(--faint);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    font-family: ui-monospace, monospace;
-    cursor: default;
-    position: sticky;
-    top: 0;
-    background: var(--surface);
-  }
-
-  .monitor-sym { font-weight: 700; display: flex; gap: 0.35rem; align-items: baseline; }
-  .monitor-sym i {
-    font-style: normal;
-    font-family: ui-monospace, monospace;
-    font-size: 0.6rem;
-    color: var(--muted);
-    border: 1px solid var(--line);
-    padding: 0 0.25rem;
-  }
-
-  /* ── Status line ─────────────────────────────────────────────────── */
-  .status-line {
-    position: fixed;
-    inset: auto 0 0 0;
-    z-index: 30;
-    display: flex;
-    align-items: center;
-    gap: 0.9rem;
-    height: 1.9rem;
-    padding: 0 1rem;
-    border-top: 1px solid var(--line);
-    background: rgba(8, 10, 13, 0.92);
-    backdrop-filter: blur(10px);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.66rem;
-    color: var(--muted);
-  }
-
-  .sl-sep { width: 1px; height: 0.9rem; background: var(--line-soft); }
-  .sl-grow { flex: 1; }
-  .warn-txt { color: var(--amber); }
-
-  .sl-help {
-    border: 1px solid var(--line);
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    padding: 0.06rem 0.4rem;
-    cursor: pointer;
-  }
-
-  .sl-help:hover { color: var(--ink); }
-
-  /* Account money in the fixed line: equity/uPnL/free/funding, one click
-     from the perp desk. */
-  .sl-money {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.7rem;
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    padding: 0;
-    cursor: pointer;
-  }
-
-  .sl-money:hover { color: var(--ink); }
-
+  /* ── Status line (markup + styles live in components/StatusLine.svelte;
+     the dashboard keeps clearance for the fixed footer) ── */
   .dashboard { padding-bottom: 2.6rem; }
 
-  /* ── News linking chips ──────────────────────────────────────────── */
-  .link-chip {
-    border: 1px solid var(--line);
-    background: transparent;
-    color: var(--faint);
-    font-family: ui-monospace, monospace;
-    font-size: 0.62rem;
-    padding: 0.1rem 0.4rem;
-    cursor: pointer;
-  }
-
-  .link-chip.on { color: var(--accent); border-color: rgba(255, 77, 151, 0.6); }
-
-  .velocity-chip {
-    font-family: ui-monospace, monospace;
-    font-size: 0.62rem;
-    color: var(--amber);
-    border: 1px solid rgba(255, 180, 84, 0.5);
-    padding: 0.1rem 0.35rem;
-  }
-
-  /* ── Trade ticket ─────────────────────────────────────────────────── */
-  .field {
-    display: grid;
-    gap: 0.3rem;
-    align-content: start;
-  }
-
-  .pct-chip {
-    flex: 1;
-    min-height: 1.4rem;
-    padding: 0.05rem 0.2rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.66rem;
-    color: var(--muted);
-    background: transparent;
-    border: 1px solid var(--line);
-    cursor: pointer;
-  }
-
-  .pct-chip:hover:not(:disabled) {
-    color: var(--ink);
-    border-color: var(--muted);
-  }
-
-  .pct-chip:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-
-  /* Reduce-only toggle: a one-line row, not a grid field. */
-  .reduce-only {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.68rem;
-    color: var(--muted);
-    cursor: pointer;
-  }
-
-  .reduce-only input {
-    width: auto;
-    min-height: 0;
-    margin: 0;
-    accent-color: var(--accent);
-  }
-
-  .field-error input {
-    border-color: var(--down);
-  }
-
-  .field-wanted input {
-    border-color: rgba(255, 180, 84, 0.55);
-  }
-
-  .field-note-amber {
-    color: var(--amber);
-  }
-
-  .field-note {
-    color: var(--down);
-    font-size: 0.62rem;
-    font-style: normal;
-    font-weight: 600;
-  }
-
-  .ticket-grid-2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.45rem 0.6rem;
-  }
-
-  .warn-row {
-    justify-content: flex-start;
-    color: var(--amber);
-  }
+  /* ── Trade ticket: field/chip/note styles moved into
+     components/TicketForm.svelte and components/SpotTicketForm.svelte
+     (.ticket-grid-2 stays in terminal.css — the add-funds modal renders
+     the same two-column form grid). The dead .warn-row orphan was dropped
+     with the move. ── */
 
   /* ── News ticker ──────────────────────────────────────────────────── */
   /* Marquee styles live in components/NewsMarquee.svelte; .news-domain is
-     shared with modal tx links, so it lives in terminal.css. */
-  .news-list {
-    display: grid;
-    gap: 0.1rem;
-    padding: 0.4rem 0.65rem 0.65rem;
-  }
+     shared with modal tx links, so it lives in terminal.css. The headline
+     list styles live in components/EventsPanel.svelte. */
 
-  .news-row {
-    display: grid;
-    gap: 0.1rem;
-    padding: 0.38rem 0;
-    border-bottom: 1px solid var(--line-soft);
-    text-decoration: none;
-    color: var(--ink);
-    font-size: 0.78rem;
-    line-height: 1.35;
-  }
-
-  .news-row:hover .news-row-title {
-    color: var(--accent);
-  }
-
-  .news-row em {
-    color: var(--faint);
-    font-size: 0.66rem;
-  }
-
-  /* ── Alerts ───────────────────────────────────────────────────────── */
-  .alerts-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .alerts-count {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 1.05rem;
-    height: 1.05rem;
-    padding: 0 0.25rem;
-    border-radius: 0;
-    background: var(--accent);
-    color: #04130d;
-    font-size: 0.6rem;
-    font-weight: 800;
-  }
+  /* ── Alerts (the topbar button + badge live in Topbar.svelte) ─────── */
 
   @media (max-width: 1100px) {
-    .perp-panel,
-    .macro-panel,
-    .watchlist-panel {
+    .macro-panel {
       grid-column: span 6;
     }
 
     .chart-panel,
     .orderbook-panel {
       grid-column: 1 / -1;
-    }
-
-    .topbar {
-      position: static;
-      align-items: flex-start;
-      flex-direction: column;
-    }
-
-    .topbar-actions {
-      width: 100%;
-      justify-content: flex-start;
-    }
-
-    .account-dropdown {
-      right: auto;
-      left: 0;
-      width: min(22rem, calc(100vw - 1.5rem));
-    }
-
-    .market-rail {
-      position: sticky;
-      top: 0;
-    }
-
-    .section-nav {
-      display: flex;
     }
 
     .chart-panel {
@@ -8405,20 +5226,12 @@
 
     .chart-panel,
     .orderbook-panel,
-    .perp-panel,
-    .macro-panel,
-    .watchlist-panel {
+    .macro-panel {
       grid-column: span 1;
     }
 
-    /* Ticket + funds forms collapse to a single column on phones. */
-    .ticket-grid-2 {
-      grid-template-columns: 1fr;
-    }
-
-    .venue-strip {
-      grid-template-columns: 1fr 1fr;
-    }
+    /* Ticket + funds forms collapse to a single column on phones —
+       .ticket-grid-2's override lives in terminal.css. */
 
     .chart-panel {
       height: clamp(22rem, 56vh, 30rem);
@@ -8426,14 +5239,6 @@
 
     .orderbook-panel {
       max-height: 26rem;
-    }
-
-    .ticker-symbol strong {
-      font-size: 0.82rem;
-    }
-
-    .ticker-price b {
-      font-size: 0.95rem;
     }
 
     .chart-toolbar {
@@ -8483,111 +5288,9 @@
       margin-left: 0;
       white-space: nowrap;
     }
-
-    .account-trigger-text small {
-      max-width: 9rem;
-    }
-
-    .book-row,
-    .table-row,
-    .markets-list button {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
-
-    .table-row em {
-      display: none;
-    }
   }
 
-  /* ── Watchlist / screener / journal / risk-mode additions ── */
-  .star-btn {
-    background: transparent;
-    border: 0;
-    color: var(--faint);
-    font-size: 0.85rem;
-    line-height: 1;
-    padding: 0 0.15rem;
-    cursor: pointer;
-  }
-  .star-btn:hover { color: var(--ink); }
-  .star-btn.starred { color: var(--accent); }
-
-  .basis-tag {
-    font-size: 0.6rem;
-    font-weight: 600;
-    margin-left: 0.3rem;
-    opacity: 0.9;
-  }
-
-  .label-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.4rem;
-    /* Mode/side flips change these strings — never let them wrap, so the
-       fields below sit at identical positions in every mode. Clip inside
-       the cell rather than bleeding into the neighboring label. */
-    white-space: nowrap;
-    min-width: 0;
-    overflow: hidden;
-    gap: 0.5rem;
-  }
-  .mode-flip {
-    background: transparent;
-    border: 0;
-    color: var(--accent);
-    font-size: 0.62rem;
-    font-weight: 600;
-    cursor: pointer;
-    padding: 0;
-    white-space: nowrap;
-  }
-  .mode-flip:hover { filter: brightness(1.15); }
-
-  .screen-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    flex-wrap: wrap;
-    padding: 0 0 0.5rem;
-  }
-  .screen-chip {
-    background: transparent;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    color: var(--muted);
-    font-size: 0.66rem;
-    font-weight: 600;
-    padding: 0.15rem 0.35rem;
-    cursor: pointer;
-  }
-  .screen-chip:hover { color: var(--ink); }
-  .screen-chip.active { color: var(--ink); border-bottom-color: var(--accent); }
-  .screen-sep {
-    width: 1px;
-    height: 0.9rem;
-    background: var(--line);
-    margin: 0 0.25rem;
-  }
-
-  .journal-list { display: grid; }
-  .journal-row {
-    display: grid;
-    grid-template-columns: 2.6rem 3.6rem minmax(0, 1fr) auto auto;
-    gap: 0.5rem;
-    align-items: baseline;
-    padding: 0.32rem 0;
-    border-bottom: 1px solid var(--line-soft);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.72rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .journal-row:last-child { border-bottom: 0; }
-  .journal-time { color: var(--faint); }
-  .journal-action { font-weight: 700; }
-  .journal-sym { color: var(--ink); }
-  .journal-row b { font-weight: 500; color: var(--muted); }
-  .journal-tx { color: var(--accent); font-size: 0.66rem; text-decoration: none; }
-
-  .warn { color: var(--amber); }
+  /* ── Risk-mode additions (the ticker star moved to TickerRail.svelte;
+     watchlist/screener/journal styles live in their panel components;
+     .label-row/.mode-flip moved with the ticket into TicketForm.svelte) ── */
 </style>
