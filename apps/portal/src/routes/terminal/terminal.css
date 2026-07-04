@@ -435,6 +435,84 @@ label {
   border-color: var(--line);
 }
 
+/* Account rows/actions: Topbar dropdown + the add-funds modal share them. */
+.account-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+
+button.account-row {
+  color: var(--ink);
+}
+
+button.account-row.copyable:hover:not(:disabled) {
+  border-color: rgba(255, 77, 151, 0.45);
+  background: rgba(255, 77, 151, 0.06);
+}
+
+.account-row-label {
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.account-row-value {
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy-hint {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.copy-hint.done {
+  color: var(--accent);
+}
+
+.account-action {
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surface-2);
+  color: var(--ink);
+  min-height: 2.1rem;
+  font-weight: 700;
+}
+
+.account-action.danger {
+  color: var(--red);
+  border-color: rgba(240, 107, 99, 0.35);
+}
+
+.account-action.danger:hover:not(:disabled) {
+  background: rgba(240, 107, 99, 0.1);
+  border-color: rgba(240, 107, 99, 0.6);
+}
+
+.account-action.accent {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(255, 77, 151, 0.4);
+}
+
+.account-action.accent:hover:not(:disabled) {
+  background: rgba(255, 77, 151, 0.2);
+}
+
 .negative {
   color: var(--red);
 }
@@ -530,6 +608,30 @@ label {
   color: var(--ink);
 }
 
+/* Two-column form grid — the page's tickets and the add-funds modal
+   (components/FundsModal.svelte) both render it. */
+.ticket-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem 0.6rem;
+}
+
+/* Panel-header dialect on ticket labels; inputs keep body sizing. The
+   .panel-ticket wrapper is page markup while the labels render inside
+   TicketForm/SpotTicketForm, so the compound lives here unscoped. */
+.panel-ticket label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.62rem;
+}
+
+.panel-ticket label input,
+.panel-ticket label select {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.85rem;
+}
+
 /* Shared responsive overrides — mirrors the page's 720px breakpoint. */
 @media (max-width: 720px) {
   .modal-backdrop {
@@ -540,7 +642,91 @@ label {
     max-height: calc(100dvh - 1.5rem);
   }
 
+  /* Ticket + funds forms collapse to a single column on phones. */
+  .ticket-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
   .venue-row {
     grid-template-columns: auto minmax(0, 1fr) auto auto;
+  }
+}
+
+/* ── Shared list-panel shell (Watchlist / Screener / Spot / Markets /
+   Journal panels — components share the section class and row list; the
+   perp desk (PerpDeskPanel) spans the same columns at every breakpoint) ── */
+.perp-panel,
+.watchlist-panel {
+  grid-column: span 4;
+}
+
+.markets-list {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.65rem;
+  max-height: 16rem;
+  overflow: auto;
+}
+
+.markets-list button {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 1.8rem;
+  font-size: 0.75rem;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  padding: 0.42rem 0.45rem;
+  color: var(--muted);
+}
+
+.markets-list button:hover,
+.markets-list button.selected-market {
+  color: var(--ink);
+  background: rgba(255, 77, 151, 0.08);
+}
+
+.markets-list b {
+  color: var(--ink);
+}
+
+.spot-list button {
+  grid-template-columns: auto 3.6rem minmax(0, 1fr) auto auto;
+}
+
+/* Token logo: sized down inside spot lists (SpotMarketsPanel), full size in
+   the page's spot asset header. */
+.spot-logo {
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--surface-2);
+  object-fit: cover;
+}
+
+.spot-logo-blank {
+  display: inline-block;
+}
+
+@media (max-width: 1100px) {
+  .perp-panel,
+  .watchlist-panel {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 720px) {
+  .perp-panel,
+  .watchlist-panel {
+    grid-column: span 1;
+  }
+
+  .markets-list button {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }
