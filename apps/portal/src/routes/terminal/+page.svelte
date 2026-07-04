@@ -15,6 +15,11 @@
   } from "$lib/ai";
   import { track } from "$lib/telemetry";
   import {
+    type Alert,
+    headlineMatches,
+    matchAlerts,
+  } from "$lib/terminal/alerts";
+  import {
     aiErr,
     humanizeBalanceError,
     humanizePrivyError,
@@ -77,6 +82,7 @@
     screenSolanaAddress,
     type NewsItem,
   } from "$lib/intel";
+  import { fetchSolanaLamports, solanaRpcUrl } from "$lib/solana-rpc";
   import { swrRead, swrWrite } from "$lib/swr";
   import {
     edgeApiBase,
@@ -147,6 +153,7 @@
     getSpotSwapTransaction,
     spotIntervalFor,
     tokenToAtoms,
+    triggerOrderView,
     usdcToAtoms,
     USDC_MINT as SPOT_USDC_MINT,
     type SpotAsset,
@@ -232,7 +239,6 @@
 
   const UP_COLOR = colors.up;
   const DOWN_COLOR = colors.down; // was #ff5a5f — unified to the token red
-  const SOLANA_MAINNET_RPC = "https://api.mainnet-beta.solana.com";
 
   let selectedSymbol = DEFAULT_PHOENIX_SYMBOL;
   let selectedTimeframe: PhoenixTimeframe = PHOENIX_TIMEFRAME;
@@ -455,14 +461,6 @@
   let screenedAddress = "";
 
   // Alert engine.
-  type Alert = {
-    id: string;
-    symbol: string;
-    op: "above" | "below";
-    price: number;
-    tier: "FLASH" | "PRIORITY" | "ROUTINE";
-    triggered: boolean;
-  };
   let alerts: Alert[] = [];
   let alertsOpen = false;
   let alertOp: "above" | "below" = "above";
@@ -1492,9 +1490,6 @@
   let newsLinked = true;
   $: activeNewsSymbol =
     tradeMode === "spot" ? (spotAsset?.symbol ?? null) : selectedSymbol;
-  function headlineMatches(title: string, symbol: string): boolean {
-    return title.toUpperCase().includes(symbol.toUpperCase());
-  }
   $: linkedNews =
     newsLinked && activeNewsSymbol
       ? news.filter((item) => headlineMatches(item.title, activeNewsSymbol))
@@ -1508,25 +1503,18 @@
     : 0;
 
   function checkAlerts(price: number | null): void {
-    if (price === null || alerts.length === 0) return;
-    let changed = false;
-    for (const alert of alerts) {
-      if (alert.triggered || alert.symbol !== selectedSymbol) continue;
-      const hit =
-        alert.op === "above" ? price >= alert.price : price <= alert.price;
-      if (hit) {
-        alert.triggered = true;
-        changed = true;
-        void fireAlert(
-          `${alert.tier} · ${alert.symbol}-PERP`,
-          `${alert.symbol} ${alert.op} ${alert.price} — now ${formatPrice(price)}`,
-        );
-      }
+    if (price === null) return;
+    const hits = matchAlerts(alerts, price, selectedSymbol);
+    if (!hits) return;
+    for (const alert of hits) {
+      alert.triggered = true;
+      void fireAlert(
+        `${alert.tier} · ${alert.symbol}-PERP`,
+        `${alert.symbol} ${alert.op} ${alert.price} — now ${formatPrice(price)}`,
+      );
     }
-    if (changed) {
-      alerts = [...alerts];
-      saveAlerts();
-    }
+    alerts = [...alerts];
+    saveAlerts();
   }
 
   // Fired alerts become a persistent, timestamped log plus toasts —
@@ -1943,49 +1931,6 @@
 
   // Session state for the selected market from its exchange calendar.
   $: sessionNote = sessionNoteOf(tradeMode, selectedMarket, nowMs);
-
-  async function fetchSolanaLamports(address: string): Promise<string> {
-    const response = await fetch(solanaRpcUrl(), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: "trader-ralph-wallet-balance",
-        method: "getBalance",
-        // "processed" over the default "finalized": received SOL shows in
-        // about a slot instead of ~12s. Display-only, so the tiny rollback
-        // window is acceptable.
-        params: [address, { commitment: "processed" }],
-      }),
-    });
-    const payload = (await response.json().catch(() => null)) as unknown;
-    if (!response.ok) throw new Error(`solana-rpc-http-${response.status}`);
-    if (!isRecord(payload)) throw new Error("solana-rpc-invalid-response");
-    if (isRecord(payload.error)) {
-      throw new Error(String(payload.error.message ?? "solana-rpc-error"));
-    }
-    const result = isRecord(payload.result) ? payload.result : null;
-    const value = result?.value;
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return Math.max(0, Math.trunc(value)).toString();
-    }
-    if (typeof value === "string" && /^\d+$/.test(value)) return value;
-    throw new Error("solana-balance-missing");
-  }
-
-  function solanaRpcUrl(): string {
-    const env = import.meta.env as Record<string, string | undefined>;
-    const configured = String(
-      env.PUBLIC_SOLANA_RPC_URL ??
-        env.VITE_SOLANA_RPC_URL ??
-        env.NEXT_PUBLIC_SOLANA_RPC_URL ??
-        "",
-    )
-      .trim()
-      .replace(/^"+|"+$/g, "")
-      .replace(/\\n$/, "");
-    return configured || SOLANA_MAINNET_RPC;
-  }
 
   type TransactionSummary = {
     title: string;
@@ -4170,28 +4115,6 @@
     } catch {
       // keep the last list on a read hiccup
     }
-  }
-
-  function triggerOrderView(order: TriggerOrder): {
-    side: "buy" | "sell";
-    symbol: string;
-    notionalUsd: number | null;
-    limitPrice: number | null;
-  } | null {
-    const isBuy = order.inputMint === SPOT_USDC_MINT;
-    const tokenMint = isBuy ? order.outputMint : order.inputMint;
-    const asset = spotAssets.find((candidate) => candidate.mint === tokenMint);
-    if (!asset) return null;
-    const usdAtoms = isBuy ? order.makingAmountAtoms : order.takingAmountAtoms;
-    const tokenAtoms = isBuy ? order.takingAmountAtoms : order.makingAmountAtoms;
-    const usd = usdAtoms / 1e6;
-    const qty = tokenAtoms / 10 ** asset.decimals;
-    return {
-      side: isBuy ? "buy" : "sell",
-      symbol: asset.symbol,
-      notionalUsd: Number.isFinite(usd) && usd > 0 ? usd : null,
-      limitPrice: qty > 0 && usd > 0 ? usd / qty : null,
-    };
   }
 
   async function submitSpotLimitOrder(): Promise<void> {
@@ -6663,7 +6586,7 @@
     {#if triggerOrders.length > 0}
       <div class="venue-section">Open limit orders</div>
       {#each triggerOrders as order (order.orderKey)}
-        {@const view = triggerOrderView(order)}
+        {@const view = triggerOrderView(order, spotAssets)}
         {#if view}
           <div class="venue-row">
             <span class={view.side === "buy" ? "positive" : "negative"}>
