@@ -88,3 +88,12 @@
 - If the repo owner or operator explicitly authorizes merge in-thread, OpenAI
   or Codex review with no blocking findings can satisfy the final review gate
   without a separate human GitHub review.
+
+## Factory
+
+- This repo runs a factory loop orchestrated by Claude: PRDs become work
+  orders under `.factory/orders/`, dispatched to delegate models. See
+  `CLAUDE.md` (operating manual) and `.factory/README.md`.
+- If you were invoked with a work order: the order's file lists, validation
+  commands, and `.factory/PITFALLS.md` are binding. Git is read-only for
+  delegates — never commit, push, stash, reset, or clean.
