@@ -26,6 +26,7 @@
   import ToastStack from "./components/ToastStack.svelte";
   import Topbar from "./components/Topbar.svelte";
   import WatchlistPanel from "./components/WatchlistPanel.svelte";
+  import WelcomeStrip from "./components/WelcomeStrip.svelte";
   import {
     aiDisabled,
     aiEventRead,
@@ -41,6 +42,10 @@
   } from "$lib/ai";
   import { track } from "$lib/telemetry";
   import { hasAcked, recordAck } from "$lib/terminal/ack";
+  import {
+    hasDismissedWelcome,
+    recordWelcomeDismissed,
+  } from "$lib/terminal/welcome";
   import { type Alert, alertsStore } from "$lib/terminal/alerts";
   import {
     buildChartLineSpecs,
@@ -574,6 +579,27 @@
   const OPEN_BETA_BANNER_STORAGE_KEY =
     "trader-ralph-terminal/open-beta-banner/v1";
   let showOpenBetaBanner = false;
+  // Welcome strip (PRD #493 / #499): three steps derived from real state,
+  // shown once per wallet until dismissed or complete. welcomeTick bumps
+  // after a dismissal so the $: re-reads localStorage.
+  let welcomeTick = 0;
+  $: welcomeFunded =
+    (usdcBalanceValue ?? 0) > 0 ||
+    (solBalanceValue ?? 0) > 0 ||
+    phoenixTotalCollateral > 0;
+  $: welcomeTraded =
+    enrichedPositions.length > 0 || hasAcked($privyAuth.walletAddress);
+  $: showWelcomeStrip =
+    welcomeTick >= 0 &&
+    $privyAuth.authenticated &&
+    Boolean($privyAuth.walletAddress) &&
+    !(welcomeFunded && welcomeTraded) &&
+    !hasDismissedWelcome($privyAuth.walletAddress);
+
+  function dismissWelcome(): void {
+    recordWelcomeDismissed($privyAuth.walletAddress);
+    welcomeTick += 1;
+  }
   // Bottom dock (desk / journal / alerts) + macro drawer — day-trading grid.
   let dockTab: "desk" | "journal" | "alerts" = "desk";
   let macroOpen = false;
@@ -4089,6 +4115,18 @@
   {#if showOpenBetaBanner}
     <div class="terminal-notice">
       <OpenBetaBanner ondismiss={dismissOpenBetaBanner} />
+    </div>
+  {/if}
+
+  {#if showWelcomeStrip}
+    <div class="terminal-notice">
+      <WelcomeStrip
+        address={`${($privyAuth.walletAddress ?? "").slice(0, 4)}…${($privyAuth.walletAddress ?? "").slice(-4)}`}
+        funded={welcomeFunded}
+        traded={welcomeTraded}
+        onfund={openFunds}
+        ondismiss={dismissWelcome}
+      />
     </div>
   {/if}
 
