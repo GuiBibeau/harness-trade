@@ -378,6 +378,9 @@
   function onAckAgree(): void {
     recordAck($privyAuth.walletAddress);
     track("ack_accepted", {});
+    // The welcome strip's "first trade" step reads the ack from
+    // localStorage — bump its tick so the reactive re-runs now (review).
+    welcomeTick += 1;
     ackOpen = false;
     const action = pendingAckAction;
     pendingAckAction = null;
@@ -581,16 +584,22 @@
   let showOpenBetaBanner = false;
   // Welcome strip (PRD #493 / #499): three steps derived from real state,
   // shown once per wallet until dismissed or complete. welcomeTick bumps
-  // after a dismissal so the $: re-reads localStorage.
+  // after a dismissal or an ack so the $:s re-read localStorage.
   let welcomeTick = 0;
+  // Never judge "unfunded" from a loading state (review): balances start
+  // null and Phoenix trader state arrives async — an onboarded wallet must
+  // not see the strip flash while they resolve.
+  $: welcomeStateKnown = usdcBalanceValue !== null && phoenixStateKnown;
   $: welcomeFunded =
     (usdcBalanceValue ?? 0) > 0 ||
     (solBalanceValue ?? 0) > 0 ||
     phoenixTotalCollateral > 0;
   $: welcomeTraded =
-    enrichedPositions.length > 0 || hasAcked($privyAuth.walletAddress);
+    welcomeTick >= 0 &&
+    (enrichedPositions.length > 0 || hasAcked($privyAuth.walletAddress));
   $: showWelcomeStrip =
     welcomeTick >= 0 &&
+    welcomeStateKnown &&
     $privyAuth.authenticated &&
     Boolean($privyAuth.walletAddress) &&
     !(welcomeFunded && welcomeTraded) &&
