@@ -41,6 +41,10 @@
   } from "$lib/ai";
   import { track } from "$lib/telemetry";
   import { hasAcked, recordAck } from "$lib/terminal/ack";
+  import {
+    hasRequestedPerpAccess,
+    recordPerpAccessRequest,
+  } from "$lib/terminal/access";
   import { type Alert, alertsStore } from "$lib/terminal/alerts";
   import {
     buildChartLineSpecs,
@@ -311,6 +315,38 @@
   let authOpen = false;
   let ackOpen = false;
   let pendingAckAction: (() => void) | null = null;
+
+  // Perp soft gate (PRD #493 / #498): a definitive not-whitelisted answer
+  // swaps the ticket submit for an inline request-access state. Unknown
+  // (null) fails open — the venue's own error is the honest signal then.
+  let perpGateNotice = false;
+  let perpAccessBusy = false;
+  let perpAccessTick = 0;
+  $: perpAccessRequested =
+    perpAccessTick >= 0 && hasRequestedPerpAccess($privyAuth.walletAddress);
+
+  async function requestPerpAccess(): Promise<void> {
+    const wallet = $privyAuth.walletAddress;
+    if (!wallet || perpAccessBusy) return;
+    perpAccessBusy = true;
+    try {
+      const res = await fetch("/notify-discord", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: `Perp access request: ${wallet} · ${$privyAuth.email ?? "no-email"}`,
+        }),
+      });
+      if (!res.ok && res.status !== 204) throw new Error(`notify ${res.status}`);
+      recordPerpAccessRequest(wallet);
+      track("perp_access_requested", { wallet });
+      perpAccessTick += 1;
+    } catch {
+      phoenixActionError = "Could not send the access request — try again.";
+    } finally {
+      perpAccessBusy = false;
+    }
+  }
 
   // Gate a trading submit behind the one-time risk ack (PRD #493). The
   // pending action runs only after "I agree" — closing the modal drops it.
@@ -867,6 +903,10 @@
   $: limitArmed = limitNeedsConfirm && nowMs < limitArmedUntil;
 
   function onPerpSubmitClick(): void {
+    if (phoenixWhitelisted === false) {
+      perpGateNotice = true;
+      return;
+    }
     if (!canSubmitPerp || limitBlocked) return;
     if (limitNeedsConfirm && Date.now() >= limitArmedUntil) {
       limitArmedUntil = Date.now() + 3_000;
@@ -875,6 +915,9 @@
     limitArmedUntil = 0;
     requireTradeAck(() => void submitPhoenixOrder());
   }
+
+  // A new wallet or a whitelist flip clears the inline gate notice.
+  $: if (phoenixWhitelisted !== false && perpGateNotice) perpGateNotice = false;
 
   $: spotLimitPriceValue = $spotOrderType === "limit" ? Number($spotLimitPrice) : 0;
   $: spotLimitDeviationPct =
@@ -4783,6 +4826,12 @@
     {selectedLiqDistancePct}
     {accountUpnlUsd}
     canSubmit={canSubmitPerp}
+    perpGate={{
+      show: perpGateNotice && phoenixWhitelisted === false,
+      requested: perpAccessRequested,
+      busy: perpAccessBusy,
+    }}
+    onrequestaccess={() => void requestPerpAccess()}
     {orderBusy}
     {orderStageEntry}
     {nowMs}
