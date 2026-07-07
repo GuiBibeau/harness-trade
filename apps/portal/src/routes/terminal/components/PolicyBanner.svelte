@@ -44,7 +44,7 @@
     gap: 0.6rem;
     padding: 0.35rem 0.7rem;
     border: 1px solid var(--line);
-    border-left: 2px solid var(--amber, #d9a441);
+    border-left: 2px solid var(--amber);
     background: var(--surface-2);
     color: var(--muted);
     font-size: 0.72rem;
