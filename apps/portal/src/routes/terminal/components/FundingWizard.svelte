@@ -35,8 +35,9 @@
   // stays out of the entry chunk (same pattern as FundsModal).
   let qrSvg = $state<string | null>(null);
   // Funds-detected beat: a brief celebratory pulse when the balance flips
-  // to funded while the wizard watches step 1. The step itself advances via
-  // the `step` derivation below — the beat only overlaps that transition.
+  // to funded while the wizard is open. It renders as an overlay outside the
+  // step branches — the same flip advances `step` past 1, so a beat rendered
+  // inside step 1 would unmount before it was ever visible.
   let fundsJustArrived = $state(false);
   let fundsBeatTimer: ReturnType<typeof setTimeout> | null = null;
   // Previous `funded` value across effect runs; starts undefined so the first
@@ -215,6 +216,10 @@
         </li>
       </ol>
 
+      {#if fundsJustArrived}
+        <p class="funds-beat" role="status">✓ Funds received</p>
+      {/if}
+
       <div class="step-body" class:ready={stepBodyReady}>
         {#if step === 1}
           <h3 class="step-title">Send funds to your wallet</h3>
@@ -228,13 +233,9 @@
             <span class="mono">{address || "—"}</span>
             <span class="copy-hint">{copied ? "Copied" : "Copy"}</span>
           </button>
-          {#if fundsJustArrived}
-            <p class="funds-beat">✓ Funds received</p>
-          {:else}
-            <p class="step-hint">
-              Sends of $10+ unlock gasless setup. This screen will advance on its own when funds arrive.
-            </p>
-          {/if}
+          <p class="step-hint">
+            Sends of $10+ unlock gasless setup. This screen will advance on its own when funds arrive.
+          </p>
         {:else if step === 2}
           <h3 class="step-title">Make it tradable</h3>
           <p class="step-copy">
@@ -294,6 +295,7 @@
   }
 
   .wizard-scroll {
+    position: relative;
     overflow-y: auto;
     overflow-x: hidden;
     display: grid;
@@ -382,7 +384,12 @@
     height: 100%;
   }
 
+  /* Overlays top-right of the scroll area (out of flow) so its 1400ms
+     appearance never reflows the step body under it. */
   .funds-beat {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
     margin: 0;
     color: var(--up);
     font-size: 0.8rem;
