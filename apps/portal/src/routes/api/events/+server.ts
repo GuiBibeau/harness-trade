@@ -40,8 +40,11 @@ export const POST: RequestHandler = async ({ request }) => {
     .toString(36)
     .slice(2, 8)}.ndjson`;
   try {
+    // Private on purpose, twice over: event payloads can carry wallet
+    // addresses, and the connected store (ralph-private) only accepts
+    // private writes — a "public" put throws and silently drops the batch.
     await put(name, `${lines}\n`, {
-      access: "public",
+      access: "private",
       contentType: "application/x-ndjson",
       token,
     });
