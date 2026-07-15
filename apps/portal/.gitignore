@@ -1,0 +1,8 @@
+node_modules
+.next
+.svelte-kit
+build
+out
+.env*
+.DS_Store
+.vercel
