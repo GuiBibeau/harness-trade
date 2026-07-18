@@ -63,7 +63,7 @@ export function text(
   return el("div", style, content);
 }
 
-/** The Candle R mark as a satori-compatible inline SVG. */
+/** The Candle H mark as a satori-compatible inline SVG. */
 export function brandMark(size = 34): Record<string, unknown> {
   return {
     type: "svg",
@@ -75,29 +75,39 @@ export function brandMark(size = 34): Record<string, unknown> {
       children: [
         {
           type: "rect",
-          props: { x: 170, y: 74, width: 20, height: 54, fill: C.accent },
+          props: { x: 158, y: 74, width: 20, height: 54, fill: C.accent },
         },
         {
           type: "rect",
-          props: { x: 170, y: 384, width: 20, height: 54, fill: C.accent },
+          props: { x: 158, y: 384, width: 20, height: 54, fill: C.accent },
         },
         {
           type: "rect",
-          props: { x: 152, y: 126, width: 56, height: 260, fill: C.ink },
+          props: { x: 334, y: 74, width: 20, height: 66, fill: C.accent },
         },
         {
-          type: "path",
-          props: {
-            d: "M 206 126 H 284 A 78 78 0 0 1 284 282 H 206 V 226 H 284 A 22 22 0 0 0 284 182 H 206 Z",
-            fill: C.ink,
-          },
+          type: "rect",
+          props: { x: 334, y: 376, width: 20, height: 62, fill: C.accent },
         },
         {
-          type: "path",
-          props: {
-            d: "M 240 280 L 296 280 L 360 386 L 304 386 Z",
-            fill: C.ink,
-          },
+          type: "rect",
+          props: { x: 246, y: 190, width: 20, height: 28, fill: C.accent },
+        },
+        {
+          type: "rect",
+          props: { x: 246, y: 262, width: 20, height: 28, fill: C.accent },
+        },
+        {
+          type: "rect",
+          props: { x: 140, y: 126, width: 56, height: 260, fill: C.ink },
+        },
+        {
+          type: "rect",
+          props: { x: 316, y: 138, width: 56, height: 240, fill: C.ink },
+        },
+        {
+          type: "rect",
+          props: { x: 186, y: 216, width: 140, height: 48, fill: C.ink },
         },
       ],
     },
