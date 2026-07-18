@@ -109,8 +109,9 @@
 <header class="topbar" bind:clientHeight={height}>
   <a class="brand" href="/terminal" aria-label="Harness terminal">
     <span class="brand-mark"><BrandMark /></span>
-    <span>Harness</span>
-    <strong>Terminal</strong>
+    <!-- Wordmark per docs/BRAND.md: HARNESS·TERMINAL -->
+    <span>HARNESS</span>
+    <strong>·TERMINAL</strong>
   </a>
   <div class="topbar-actions">
     {#if layoutCustomized}
