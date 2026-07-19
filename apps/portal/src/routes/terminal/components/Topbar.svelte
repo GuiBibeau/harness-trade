@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { chatState } from "$lib/chat";
   import { privyAuth } from "$lib/privy-auth";
   import {
     shortAddress,
@@ -22,6 +23,7 @@
     onopenfunds,
     onopenalerts,
     onresetlayout,
+    onToggleChat,
     onlogout,
     oncopyaddress,
     onrefreshbalances,
@@ -44,6 +46,7 @@
     onopenfunds: () => void;
     onopenalerts: () => void;
     onresetlayout: () => void;
+    onToggleChat: () => void;
     onlogout: () => void | Promise<void>;
     oncopyaddress: () => void | Promise<void>;
     onrefreshbalances: () => void;
@@ -121,6 +124,14 @@
       Alerts{#if pendingAlertCount}
         <span class="alerts-count">{pendingAlertCount}</span>
       {/if}
+    </button>
+    <button
+      class="ghost"
+      type="button"
+      aria-expanded={$chatState.open}
+      onclick={onToggleChat}
+    >
+      desk
     </button>
     {#if $privyAuth.authenticated}
       <div class="account-menu">

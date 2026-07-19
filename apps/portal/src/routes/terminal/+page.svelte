@@ -127,6 +127,8 @@
     screenSolanaAddress,
     type NewsItem,
   } from "$lib/intel";
+  import { chatState, closeChat, toggleChat } from "$lib/chat";
+  import { buildDeskContext } from "$lib/chat-context";
   import { fetchMintSafety, fetchSolanaLamports, solanaRpcUrl } from "$lib/solana-rpc";
   import { swrRead, swrWrite } from "$lib/swr";
   import {
@@ -818,6 +820,10 @@
   // import keeps that graph out of the entry chunk. The module registry
   // memoizes the load, so every call site shares one in-flight fetch.
   const tradeModule = () => import("$lib/phoenix-trade");
+  // Side-chat dock (PRD #563, WP3): lazy so the panel's chunk stays out of
+  // the entry bundle until the first summon — closed = zero JS weight. The
+  // module registry caches the load, so repeat opens are instant.
+  const SidePanelLazy = () => import("./components/SidePanel.svelte");
   // Mandatory auth-time prefetch: the moment auth lands — before any trade,
   // deposit, swap or cancel is possible (all require the wallet, which only
   // exists when authenticated) — warm the chunk so no user action ever
@@ -987,6 +993,31 @@
       equityUsd: accountEquityUsd,
       freeCollateralUsd: phoenixCollateral,
     };
+  }
+
+  // Side-chat grounding snapshot (PRD #563, WP2 serializer): assembled at
+  // send time from the page's live state so the model always sees the current
+  // desk. The panel never imports page state — it only calls this closure.
+  function buildDeskContextClosure(): Record<string, unknown> {
+    return buildDeskContext({
+      symbol: selectedSymbol,
+      timeframe: selectedTimeframe,
+      positions: enrichedPositions,
+      openOrders: perpOpenOrders,
+      dayPnlUsd: sessionPnlUsd,
+      equityUsd: accountEquityUsd,
+      monitorRows: markets.map((market) => ({
+        symbol: market.symbol,
+        mid: marketMids[market.symbol] ?? null,
+      })),
+      watchlist,
+      headlines: news.map((item) => ({
+        title: item.title,
+        source: item.domain,
+        ageMin: Math.max(0, Math.round((nowMs - item.seenMs) / 60_000)),
+      })),
+      nowMs: Date.now(),
+    });
   }
 
   function liqDistancePctOf(position: PhoenixPosition): number | null {
@@ -4825,12 +4856,17 @@
       return;
     }
     if (event.key === "Escape") {
+      // Modal-priority: if a modal owns this Escape, close only it and leave
+      // the side chat — one Escape never doubles as chat-close.
+      const modalOwned =
+        tradeOpen || authOpen || alertsOpen || fundsOpen || paletteOpen || cheatOpen;
       if (tradeOpen) tradeOpen = false;
       if (authOpen) authOpen = false;
       if (alertsOpen) alertsOpen = false;
       if (fundsOpen) fundsOpen = false;
       if (paletteOpen) paletteOpen = false;
       if (cheatOpen) cheatOpen = false;
+      if ($chatState.open && !modalOwned) closeChat();
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const target = event.target;
@@ -4868,6 +4904,12 @@
       }
     }
     if (authOpen || tradeOpen || alertsOpen || fundsOpen || paletteOpen || cheatOpen) {
+      return;
+    }
+    // Backtick summons the side chat — same input/modal guards as the other
+    // hotkeys above (typing-in-input and modal-open both bail earlier).
+    if (event.key === "`") {
+      toggleChat();
       return;
     }
     if (event.key === "/") {
@@ -4985,6 +5027,7 @@
     onopenfunds={openFunds}
     onopenalerts={() => (alertsOpen = true)}
     onresetlayout={resetLayout}
+    onToggleChat={toggleChat}
     onlogout={disconnectPrivy}
     oncopyaddress={copyWalletAddress}
     onrefreshbalances={() => {
@@ -5033,6 +5076,7 @@
   <section
     id="terminal-content"
     class="dashboard"
+    class:chat-open={$chatState.open}
     style={`--anchor-top: ${(stackedBook ? topbarHeight : 0) + marketRailHeight}px;`}
   >
     <!-- Chart column: chart stacked over the dock (Hyperliquid posture) —
@@ -5716,6 +5760,17 @@
       onselect={selectSpotAsset}
     />
 
+    {#if $chatState.open}
+      {#await SidePanelLazy()}
+        <!-- dock chunk loading on first summon -->
+      {:then module}
+        <svelte:component
+          this={module.default}
+          buildContext={buildDeskContextClosure}
+          onRequestAuth={openAuthModal}
+        />
+      {/await}
+    {/if}
   </section>
   <StatusLine
     status={statusModel}
@@ -6148,6 +6203,17 @@
     grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: clamp(0.6rem, 1vw, 0.9rem);
     padding: clamp(0.75rem, 1.4vw, 1.15rem);
+  }
+
+  /* Side-chat dock (PRD #563, WP3): when the panel is open the main grid
+     gains a 380px right track for the dock while the existing 12-col content
+     stays intact. Closed = class absent = repeat(12, …) unchanged, so the
+     layout is byte-identical. Below the dock's mobile breakpoint the panel
+     goes fixed-sheet, so no track is reserved there. */
+  @media (min-width: 1101px) {
+    .dashboard.chat-open {
+      grid-template-columns: repeat(12, minmax(0, 1fr)) 380px;
+    }
   }
 
   .chart-panel {
