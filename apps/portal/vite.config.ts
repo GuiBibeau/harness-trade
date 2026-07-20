@@ -7,10 +7,6 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const deepseekKey = env.DEEPSEEK_API_KEY?.trim();
   const tokensXyzKey = env.TOKENS_XYZ_API_KEY?.trim();
-  const discordWebhook = env.DISCORD_WEBHOOK_URL?.trim();
-  const discordPath = discordWebhook
-    ? new URL(discordWebhook).pathname + new URL(discordWebhook).search
-    : "";
 
   return {
     envPrefix: ["VITE_", "PUBLIC_", "NEXT_PUBLIC_"],
@@ -67,16 +63,6 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
-        // Optional Discord webhook delivery — full URL (incl. token) kept server-side.
-        ...(discordPath
-          ? {
-              "/notify-discord": {
-                target: "https://discord.com",
-                changeOrigin: true,
-                rewrite: () => discordPath,
-              },
-            }
-          : {}),
       },
     },
   };
