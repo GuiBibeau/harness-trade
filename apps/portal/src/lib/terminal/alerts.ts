@@ -169,6 +169,7 @@ function createAlertsStore(): AlertsStore {
     pushToast(entry);
   }
 
+  // Kept async: callers await fire() and the AlertsStore type promises it.
   async function fire(title: string, body: string): Promise<void> {
     recordFiredAlert(title, body);
     if (
@@ -180,15 +181,6 @@ function createAlertsStore(): AlertsStore {
       } catch {
         // notification construction can throw on some platforms
       }
-    }
-    try {
-      await fetch("/notify-discord", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content: `🔔 ${title} — ${body}` }),
-      });
-    } catch {
-      // Discord webhook optional / not configured
     }
   }
 

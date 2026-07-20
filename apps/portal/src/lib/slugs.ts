@@ -17,7 +17,9 @@ export const RESERVED_SLUGS = new Set([
   "jupiter",
   "yahoo",
   "gdelt",
-  "notify-discord",
+  // "/discord" stays reserved after the community server's removal: old
+  // links in the wild must 404 honestly, not resolve to an asset page.
+  "discord",
   "token",
   "equities",
   "pre-ipo",

@@ -2,9 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "sveltekit",
   "installCommand": "bun install",
-  "buildCommand": "bun run build",
-  "crons": [
-    { "path": "/api/cron/market-moves", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/mod-sweep", "schedule": "*/5 * * * *" }
-  ]
+  "buildCommand": "bun run build"
 }
