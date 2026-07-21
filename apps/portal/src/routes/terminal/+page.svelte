@@ -13,6 +13,7 @@
   import EventsPanel from "./components/EventsPanel.svelte";
   import FundingWizard from "./components/FundingWizard.svelte";
   import FundsModal from "./components/FundsModal.svelte";
+  import PaperFundsModal from "./components/PaperFundsModal.svelte";
   import JournalPanel from "./components/JournalPanel.svelte";
   import MacroPanel from "./components/MacroPanel.svelte";
   import MonitorPanel from "./components/MonitorPanel.svelte";
@@ -104,6 +105,22 @@
     RAYS_PER_SYMBOL_CAP,
   } from "$lib/terminal/prefs";
   import {
+    PAPER_AUTHORITY,
+    PAPER_STARTING_BALANCE,
+    addPaperMargin,
+    cancelPaperOrder,
+    cancelPaperOrdersOnSide,
+    closePaperPosition,
+    ledgerToTraderState,
+    paperLedger,
+    placePaperOrder,
+    resetPaperLedger,
+    setPaperTpSl,
+    tickPaperLedger,
+    topUpPaperCash,
+    type PaperEvent,
+  } from "$lib/terminal/paper-ledger";
+  import {
     disconnectedPanel,
     disconnectedRows,
     emptyMarketStats,
@@ -166,6 +183,7 @@
     initializePrivyAuth,
     logoutPrivy,
     privyAuth,
+    readPrivyConfig,
     signAndSendSolanaTransaction,
     signSolanaTransaction,
     type PrivyAuthState,
@@ -426,9 +444,18 @@
   // Derived from the persisted per-wallet store: instant on load (device
   // snapshot), corrected by the live refresh, synced across tabs. Loading
   // is null — the ticket never claims "Deposit first" for it.
-  $: phoenixTrader = phoenixAuthority
+  // Paper mode swaps in a local ledger shaped like PhoenixTraderState so
+  // the desk/ticket/chart keep working without signing.
+  // Default to paper when Privy isn't set up locally — live trading needs
+  // PUBLIC_PRIVY_APP_ID; paper does not. Saved prefs still win on load.
+  let paperMode = !readPrivyConfig().appId;
+  $: livePhoenixTrader = phoenixAuthority
     ? freshSnapshot($traderSnapshots, phoenixAuthority)
     : null;
+  $: phoenixTrader = paperMode
+    ? ledgerToTraderState($paperLedger)
+    : livePhoenixTrader;
+  $: tradeAuthority = paperMode ? PAPER_AUTHORITY : phoenixAuthority;
   // Per-action busy keys (`order:SYM`, `close:SYM:IDX`, `cancel:SYM:SIDE`) so
   // a confirming open never locks Close/Cancel — confirmTransaction can take
   // ~60s under congestion. Always REASSIGNED: mutating the Set in place is
@@ -458,6 +485,7 @@
   // components/FundsModal.svelte; the page keeps the open flag + tab
   // (deep-link `?fund=` and openPhoenixFunding pre-set them).
   let fundsOpen = false;
+  let paperFundsOpen = false;
   let fundsTab: "receive" | "convert" | "phoenix" = "receive";
   let tradeOpen = false;
   let pendingBook: { bids: DepthLevel[]; asks: DepthLevel[]; mid: number | null } | null =
@@ -929,9 +957,9 @@
     perpsMode: tradeMode === "perps",
     stackedBook,
     tradeTab: bookTab === "trade",
-    hasAuthority: Boolean(phoenixAuthority),
+    hasAuthority: Boolean(phoenixAuthority) || paperMode,
     stateKnown: phoenixStateKnown,
-    chainVerified: phoenixTrader?.chainVerified === true,
+    chainVerified: paperMode || phoenixTrader?.chainVerified === true,
     collateralUsd: phoenixCollateral,
   });
   $: perpTicket.setNow(nowMs);
@@ -1087,12 +1115,12 @@
   // ── Keyboard: Enter submits, arrows step ───────────────────────────
   // Enter-to-submit shares the exact gate that enables each submit button.
   $: canSubmitPerp =
-    Boolean(phoenixAuthority) &&
+    (paperMode || Boolean(phoenixAuthority)) &&
     phoenixStateKnown &&
     !$needsPhoenixFunding &&
     !orderBusy &&
     Boolean($tradePreview) &&
-    !walletScreen.flagged;
+    (paperMode || !walletScreen.flagged);
   $: canSubmitSpot =
     Boolean(phoenixAuthority) &&
     !spotBusy &&
@@ -1125,7 +1153,7 @@
   $: limitArmed = limitNeedsConfirm && nowMs < limitArmedUntil;
 
   function onPerpSubmitClick(): void {
-    if (phoenixWhitelisted === false) {
+    if (!paperMode && phoenixWhitelisted === false) {
       perpGateContext = `${$privyAuth.walletAddress ?? ""}:${selectedSymbol}`;
       perpGateNotice = true;
       return;
@@ -1136,6 +1164,10 @@
       return;
     }
     limitArmedUntil = 0;
+    if (paperMode) {
+      void submitPaperOrder();
+      return;
+    }
     requireTradeAck(() => void submitPhoenixOrder());
   }
 
@@ -1273,6 +1305,7 @@
       macroOpen,
       showLevels,
       rays,
+      paperMode,
     );
 
   onMount(() => {
@@ -2141,6 +2174,10 @@
   // QR generation + swap-quote state live in components/FundsModal.svelte;
   // the swap SUBMIT stays here (signing plumbing: simulateConfirmAndSend).
   function openFunds(): void {
+    if (paperMode) {
+      paperFundsOpen = true;
+      return;
+    }
     fundsOpen = true;
     fundsTab = "receive";
     if ($privyAuth.walletAddress) void refreshWalletBalance($privyAuth.walletAddress);
@@ -2566,6 +2603,179 @@
   } | null = null;
   let closingKeys: Set<string> = new Set(); // `${symbol}:${subaccountIndex}`
 
+  function notePaperEvents(events: PaperEvent[]): void {
+    for (const event of events) {
+      noteTrade({
+        ts: Date.now(),
+        venue: "perp",
+        symbol: event.symbol,
+        action:
+          event.kind === "close" || event.kind === "tp" || event.kind === "sl" || event.kind === "liq"
+            ? "close"
+            : event.side === "bid"
+              ? "long"
+              : "short",
+        notionalUsd: event.notionalUsd,
+        price: event.price,
+        leverage: event.leverage,
+        signature: event.signature,
+      });
+      if (event.kind === "tp" || event.kind === "sl" || event.kind === "liq") {
+        alertsStore.pushToast({
+          ts: Date.now(),
+          title:
+            event.kind === "tp"
+              ? "Paper take profit"
+              : event.kind === "sl"
+                ? "Paper stop loss"
+                : "Paper liquidation",
+          body: `${event.symbol} @ ${formatPrice(event.price)}`,
+        });
+      }
+    }
+  }
+
+  function applyPaperMids(): void {
+    if (!paperMode) return;
+    const mids: Record<string, number> = { ...marketMids };
+    if (latestPrice != null) mids[selectedSymbol] = latestPrice;
+    const ticked = tickPaperLedger($paperLedger, mids);
+    if (ticked.events.length === 0 && ticked.ledger === $paperLedger) return;
+    paperLedger.set(ticked.ledger);
+    notePaperEvents(ticked.events);
+  }
+
+  $: if (paperMode) {
+    marketMids;
+    latestPrice;
+    applyPaperMids();
+  }
+
+  function togglePaperMode(): void {
+    paperMode = !paperMode;
+    phoenixActionError = "";
+    phoenixActionErrorDetail = "";
+    pendingOrder = null;
+    track("paper_mode_toggled", { paperMode });
+    if (paperMode && tradeMode !== "perps") setTradeMode("perps", false);
+  }
+
+  function resetPaperAccount(): void {
+    paperLedger.set(resetPaperLedger());
+    pendingOrder = null;
+    alertsStore.pushToast({
+      ts: Date.now(),
+      title: "Paper reset",
+      body: `Balance restored to $${PAPER_STARTING_BALANCE.toLocaleString()} USDC`,
+    });
+  }
+
+  function topUpPaperAccount(amount = 1_000): void {
+    paperLedger.set(topUpPaperCash($paperLedger, amount));
+    alertsStore.pushToast({
+      ts: Date.now(),
+      title: "Paper top-up",
+      body: `+$${amount.toLocaleString()} USDC`,
+    });
+  }
+
+  function flattenPaperPositions(): void {
+    let next = $paperLedger;
+    const events: PaperEvent[] = [];
+    for (const position of [...next.positions]) {
+      const mark =
+        marketMids[position.symbol] ??
+        (position.symbol === selectedSymbol ? latestPrice : null) ??
+        position.entryPrice;
+      if (!mark) continue;
+      const closed = closePaperPosition(
+        next,
+        position.symbol,
+        position.subaccountIndex,
+        1,
+        mark,
+        "close",
+      );
+      next = closed.ledger;
+      if (closed.event) events.push(closed.event);
+    }
+    paperLedger.set(next);
+    notePaperEvents(events);
+  }
+
+  async function submitPaperOrder(): Promise<void> {
+    const symbol = selectedSymbol;
+    const busyKey = `order:${symbol}`;
+    if (phoenixBusyKeys.has(busyKey) || !$tradePreview) return;
+    const preview = $tradePreview;
+    const orderType = $tradeType;
+    const leverage = $tradeLeverage;
+    const reduceOnly = $tradeReduceOnly && selectedPosition !== null;
+    const entry = preview.entry ?? latestPrice;
+    if (!entry || entry <= 0) return;
+    setPhoenixBusy(busyKey, true);
+    phoenixActionError = "";
+    phoenixActionErrorDetail = "";
+    phoenixActionRetry = null;
+    try {
+      const side: PhoenixSide = $tradeSide === "buy" ? "bid" : "ask";
+      const limitPrice = Number($tradeLimitPrice);
+      const refPrice =
+        orderType === "limit" && Number.isFinite(limitPrice) && limitPrice > 0
+          ? limitPrice
+          : entry;
+      const tp = Number($tradeTakeProfit);
+      const sl = Number($tradeStopLoss);
+      const takeProfitPrice = Number.isFinite(tp) && tp > 0 ? tp : null;
+      const stopLossPrice = Number.isFinite(sl) && sl > 0 ? sl : null;
+      const result = placePaperOrder($paperLedger, {
+        symbol,
+        side,
+        orderType,
+        notionalUsd: preview.notionalUsd,
+        leverage,
+        price: refPrice,
+        takeProfitPrice,
+        stopLossPrice,
+        reduceOnly,
+      });
+      paperLedger.set(result.ledger);
+      notePaperEvents(result.events);
+      lastOrderIntent = {
+        symbol,
+        side: $tradeSide,
+        type: orderType,
+        amount: $tradeAmount,
+        leverage,
+        limitPrice: $tradeLimitPrice,
+        tp: $tradeTakeProfit,
+        sl: $tradeStopLoss,
+      };
+      lastTradeSignature = result.events[0]?.signature ?? `paper-limit-${Date.now()}`;
+      tradeOpen = false;
+      if (orderType === "limit" && result.events.length === 0) {
+        alertsStore.pushToast({
+          ts: Date.now(),
+          title: "Paper limit resting",
+          body: `${symbol} @ ${formatPrice(refPrice)}`,
+        });
+      }
+      track("paper_order_submitted", {
+        ...marketContext(),
+        side,
+        orderType,
+        notionalUsd: preview.notionalUsd,
+        leverage,
+      });
+    } catch (error) {
+      phoenixActionError =
+        error instanceof Error ? error.message : "paper-order-failed";
+      phoenixActionRetry = () => void submitPaperOrder();
+    } finally {
+      setPhoenixBusy(busyKey, false);
+    }
+  }
+
   function snapshotFingerprint(): string {
     const positions = (phoenixTrader?.positions ?? [])
       .map((position) => `${position.symbol}:${position.size.toFixed(4)}`)
@@ -2749,6 +2959,23 @@
     subaccountIndex: number,
     fraction = 1,
   ): Promise<void> {
+    if (paperMode) {
+      const mark =
+        marketMids[symbol] ??
+        (symbol === selectedSymbol ? latestPrice : null);
+      if (!mark) return;
+      const closed = closePaperPosition(
+        $paperLedger,
+        symbol,
+        subaccountIndex,
+        fraction,
+        mark,
+        "close",
+      );
+      paperLedger.set(closed.ledger);
+      if (closed.event) notePaperEvents([closed.event]);
+      return;
+    }
     const busyKey = `close:${symbol}:${subaccountIndex}`;
     if (!phoenixAuthority || phoenixBusyKeys.has(busyKey) || size === 0) return;
     const partial = fraction < 1;
@@ -2900,6 +3127,10 @@
   }
 
   async function cancelPhoenixOrders(symbol: string, side: PhoenixSide): Promise<void> {
+    if (paperMode) {
+      paperLedger.set(cancelPaperOrdersOnSide($paperLedger, symbol, side));
+      return;
+    }
     const busyKey = `cancel:${symbol}:${side}`;
     if (!phoenixAuthority || phoenixBusyKeys.has(busyKey)) return;
     setPhoenixBusy(busyKey, true);
@@ -2940,6 +3171,10 @@
   // Cancels exactly one resting order (or one stop-loss trigger) — a row's
   // Cancel must never sweep the whole side and take a protective stop with it.
   async function cancelPhoenixOrderById(order: PhoenixOpenOrder): Promise<void> {
+    if (paperMode) {
+      paperLedger.set(cancelPaperOrder($paperLedger, order.orderSequenceNumber));
+      return;
+    }
     const busyKey = orderCancelKey(order);
     if (!phoenixAuthority || phoenixBusyKeys.has(busyKey)) return;
     setPhoenixBusy(busyKey, true);
@@ -3084,6 +3319,24 @@
 
   async function submitMarginAdd(position: PhoenixPosition): Promise<void> {
     const amount = Number(marginAddValue);
+    if (paperMode) {
+      try {
+        paperLedger.set(
+          addPaperMargin(
+            $paperLedger,
+            position.symbol,
+            position.subaccountIndex,
+            amount,
+          ),
+        );
+        marginAddKey = null;
+        marginAddValue = "";
+      } catch (error) {
+        phoenixActionError =
+          error instanceof Error ? error.message : "paper-margin-failed";
+      }
+      return;
+    }
     const busyKey = `margin:${position.symbol}:${position.subaccountIndex}`;
     if (
       !phoenixAuthority ||
@@ -3177,7 +3430,8 @@
         }
       : null,
     armedHotkey,
-    showMoney: Boolean(phoenixAuthority),
+    showMoney: Boolean(phoenixAuthority) || paperMode,
+    paperMode,
     equityUsd: accountEquityUsd,
     upnlUsd: accountUpnlUsd,
     freeCollateralUsd: phoenixCollateral,
@@ -3188,6 +3442,10 @@
   function onFlattenClick(): void {
     if (Date.now() < flattenArmedUntil) {
       flattenArmedUntil = 0;
+      if (paperMode) {
+        void flattenPaperPositions();
+        return;
+      }
       void closeAllPhoenixPositions();
     } else {
       flattenArmedUntil = Date.now() + 3_000;
@@ -3293,6 +3551,32 @@
   }
 
   async function submitCollateral(direction: "deposit" | "withdraw"): Promise<void> {
+    if (paperMode) {
+      const raw = direction === "deposit" ? depositAmount : withdrawAmount;
+      const amount = Number(raw);
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      try {
+        if (direction === "deposit") {
+          paperLedger.set(topUpPaperCash($paperLedger, amount));
+        } else {
+          if ($paperLedger.cashUsd + 1e-9 < amount) {
+            throw new Error("Insufficient paper free collateral");
+          }
+          paperLedger.set({
+            ...$paperLedger,
+            cashUsd: $paperLedger.cashUsd - amount,
+          });
+        }
+        collateralSignature = `paper-${direction}-${Date.now()}`;
+        collateralError = "";
+        depositAmount = "";
+        withdrawAmount = "";
+      } catch (error) {
+        collateralError =
+          error instanceof Error ? error.message : "paper-collateral-failed";
+      }
+      return;
+    }
     const amount = Number(direction === "deposit" ? depositAmount : withdrawAmount);
     if (!phoenixAuthority || collateralBusy || !Number.isFinite(amount) || amount <= 0) {
       return;
@@ -3658,6 +3942,10 @@
     // Swap modals (never stack): close the ticket, open funds on Phoenix tab
     // with the shortfall prefilled.
     tradeOpen = false;
+    if (paperMode) {
+      paperFundsOpen = true;
+      return;
+    }
     const shortfall = Math.max(0, $requiredMarginUsd - phoenixCollateral);
     depositAmount = shortfall > 0 ? String(Math.ceil(shortfall)) : "";
     fundsOpen = true;
@@ -3712,7 +4000,17 @@
   }
 
   function openAuthModal(): void {
-    // Step/email/message seeding happens inside AuthModal on mount.
+    // Local clones without PUBLIC_PRIVY_APP_ID can't sign in — never open
+    // the broken auth modal. Drop into paper instead.
+    if (!readPrivyConfig().appId) {
+      if (!paperMode) paperMode = true;
+      alertsStore.pushToast({
+        ts: Date.now(),
+        title: "Paper mode",
+        body: "Live auth isn't configured here — trading with simulated funds.",
+      });
+      return;
+    }
     authOpen = true;
   }
 
@@ -4500,6 +4798,22 @@
     price: number,
     fromPrice: number,
   ): Promise<void> {
+    if (paperMode) {
+      try {
+        paperLedger.set(
+          setPaperTpSl($paperLedger, position.symbol, position.subaccountIndex, {
+            takeProfitPrice: kind === "tp" ? price : undefined,
+            stopLossPrice: kind === "sl" ? price : undefined,
+          }),
+        );
+        tpslPending = null;
+      } catch (error) {
+        tpslPending = null;
+        phoenixActionError =
+          error instanceof Error ? error.message : "paper-tpsl-failed";
+      }
+      return;
+    }
     const busyKey = tpslBusyKey(position);
     if (!phoenixAuthority || phoenixBusyKeys.has(busyKey)) return;
     setPhoenixBusy(busyKey, true);
@@ -4741,6 +5055,10 @@
     if (prefs.macroOpen !== undefined) macroOpen = prefs.macroOpen;
     if (prefs.showLevels !== undefined) showLevels = prefs.showLevels;
     if (prefs.rays !== undefined) rays = prefs.rays;
+    if (prefs.paperMode !== undefined) paperMode = prefs.paperMode;
+    // Without Privy, live trading is impossible — stay in paper regardless
+    // of a previously saved LIVE preference.
+    if (!readPrivyConfig().appId) paperMode = true;
   }
 
   function loadOpenBetaBanner(): void {
@@ -4859,11 +5177,12 @@
       // Modal-priority: if a modal owns this Escape, close only it and leave
       // the side chat — one Escape never doubles as chat-close.
       const modalOwned =
-        tradeOpen || authOpen || alertsOpen || fundsOpen || paletteOpen || cheatOpen;
+        tradeOpen || authOpen || alertsOpen || fundsOpen || paperFundsOpen || paletteOpen || cheatOpen;
       if (tradeOpen) tradeOpen = false;
       if (authOpen) authOpen = false;
       if (alertsOpen) alertsOpen = false;
       if (fundsOpen) fundsOpen = false;
+      if (paperFundsOpen) paperFundsOpen = false;
       if (paletteOpen) paletteOpen = false;
       if (cheatOpen) cheatOpen = false;
       if ($chatState.open && !modalOwned) closeChat();
@@ -4886,6 +5205,7 @@
       !authOpen &&
       !alertsOpen &&
       !fundsOpen &&
+      !paperFundsOpen &&
       !paletteOpen &&
       !cheatOpen
     ) {
@@ -4903,7 +5223,7 @@
         return;
       }
     }
-    if (authOpen || tradeOpen || alertsOpen || fundsOpen || paletteOpen || cheatOpen) {
+    if (authOpen || tradeOpen || alertsOpen || fundsOpen || paperFundsOpen || paletteOpen || cheatOpen) {
       return;
     }
     // Backtick summons the side chat — same input/modal guards as the other
@@ -5023,6 +5343,8 @@
     }}
     {layoutCustomized}
     {logoutBusy}
+    {paperMode}
+    paperFundsLabel={`$${formatNumber(accountEquityUsd, 0)}`}
     onopenauth={openAuthModal}
     onopenfunds={openFunds}
     onopenalerts={() => (alertsOpen = true)}
@@ -5034,6 +5356,7 @@
       void refreshWalletBalance();
       void refreshPhoenixTrader();
     }}
+    ontogglepaper={togglePaperMode}
   />
 
   {#if showOpenBetaBanner}
@@ -5621,7 +5944,7 @@
 
 {#snippet perpDeskPanel()}
     <PerpDeskPanel
-      authority={phoenixAuthority}
+      authority={tradeAuthority}
       trader={phoenixTrader}
       positions={enrichedPositions}
       openOrders={perpOpenOrders}
@@ -5654,6 +5977,7 @@
       {cancelSweepBusy}
       {marginAddKey}
       bind:marginAddValue
+      {paperMode}
       ontrade={openTrade}
       ondeposit={openFunds}
       onselectsymbol={chooseMonitorRow}
@@ -5671,6 +5995,7 @@
       onflatten={onFlattenClick}
       onmarginopen={openMarginAdd}
       onmarginsubmit={(position) => submitMarginAdd(position)}
+      onresetpaper={resetPaperAccount}
     />
 {/snippet}
 
@@ -5892,6 +6217,25 @@
   onswap={performSwap}
 />
 
+<PaperFundsModal
+  open={paperFundsOpen}
+  freeUsd={$paperLedger.cashUsd}
+  equityUsd={accountEquityUsd}
+  marginUsd={Math.max(
+    0,
+    ($paperLedger.positions.reduce((sum, p) => sum + (p.marginUsd ?? 0), 0) +
+      $paperLedger.orders.reduce((sum, o) => sum + o.marginUsd, 0)),
+  )}
+  openPositions={$paperLedger.positions.length}
+  onclose={() => (paperFundsOpen = false)}
+  ontopup={(amount) => {
+    topUpPaperAccount(amount);
+  }}
+  onreset={() => {
+    resetPaperAccount();
+  }}
+/>
+
 {#snippet spotTicketForm()}
   <SpotTicketForm
     ticket={spotTicket}
@@ -5931,7 +6275,7 @@
     {fundingPercent}
     {selectedSymbol}
     {selectedPosition}
-    {phoenixAuthority}
+    phoenixAuthority={tradeAuthority}
     {phoenixStateKnown}
     {phoenixCollateral}
     {phoenixTotalCollateral}
@@ -5939,6 +6283,7 @@
     {marginUsedPct}
     {selectedLiqDistancePct}
     {accountUpnlUsd}
+    {paperMode}
     canSubmit={canSubmitPerp}
     perpGate={{
       show: perpGateNotice && phoenixWhitelisted === false,

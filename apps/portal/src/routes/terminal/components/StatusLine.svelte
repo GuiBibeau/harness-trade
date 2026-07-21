@@ -16,6 +16,7 @@
     lastTx: { label: string; failed: boolean; text: string } | null;
     armedHotkey: { key: "c" | "x"; until: number } | null;
     showMoney: boolean;
+    paperMode: boolean;
     equityUsd: number;
     upnlUsd: number;
     freeCollateralUsd: number;
@@ -69,6 +70,14 @@
       title="Jump to positions"
       onclick={onjumptopositions}
     >
+      <span
+        class="paper-badge"
+        class:on={status.paperMode}
+        title={status.paperMode ? "Simulated balance on live prices" : undefined}
+        aria-hidden={!status.paperMode}
+      >
+        PAPER
+      </span>
       <span>EQ ${formatNumber(status.equityUsd, 0)}</span>
       <span class:positive={status.upnlUsd >= 0} class:negative={status.upnlUsd < 0}>
         uPNL {status.upnlUsd >= 0 ? "+" : "-"}${formatNumber(Math.abs(status.upnlUsd), 2)}
@@ -136,4 +145,24 @@
   }
 
   .sl-money:hover { color: var(--ink); }
+
+  .paper-badge {
+    display: inline-block;
+    min-width: 2.6rem;
+    color: var(--accent);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    opacity: 0;
+    transition: opacity 160ms ease;
+  }
+
+  .paper-badge.on {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .paper-badge {
+      transition: none !important;
+    }
+  }
 </style>

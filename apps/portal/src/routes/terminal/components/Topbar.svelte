@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fade, fly } from "svelte/transition";
   import { chatState } from "$lib/chat";
   import { privyAuth } from "$lib/privy-auth";
   import {
@@ -18,6 +19,8 @@
     wallet,
     layoutCustomized,
     logoutBusy,
+    paperMode = false,
+    paperFundsLabel = "",
     height = $bindable(0),
     onopenauth,
     onopenfunds,
@@ -27,6 +30,7 @@
     onlogout,
     oncopyaddress,
     onrefreshbalances,
+    ontogglepaper,
   }: {
     wallet: {
       balanceText: string;
@@ -41,6 +45,9 @@
     };
     layoutCustomized: boolean;
     logoutBusy: boolean;
+    paperMode?: boolean;
+    /** Shown on the paper Funds button, e.g. "$10,000". */
+    paperFundsLabel?: string;
     height?: number;
     onopenauth: () => void;
     onopenfunds: () => void;
@@ -50,6 +57,7 @@
     onlogout: () => void | Promise<void>;
     oncopyaddress: () => void | Promise<void>;
     onrefreshbalances: () => void;
+    ontogglepaper: () => void;
   } = $props();
 
   // Aliases keep the moved markup verbatim against the page's names.
@@ -117,6 +125,26 @@
     <strong>·TERMINAL</strong>
   </a>
   <div class="topbar-actions">
+    <div class="mode-toggle" class:is-paper={paperMode} role="group" aria-label="Trading mode">
+      <span class="mode-pill" aria-hidden="true"></span>
+      <button
+        type="button"
+        class:active={!paperMode}
+        onclick={() => paperMode && ontogglepaper()}
+        title="Live trading with real funds"
+      >
+        LIVE
+      </button>
+      <button
+        type="button"
+        class:active={paperMode}
+        class:paper={paperMode}
+        onclick={() => !paperMode && ontogglepaper()}
+        title="Paper trading — simulated balance on live prices"
+      >
+        PAPER
+      </button>
+    </div>
     {#if layoutCustomized}
       <button class="ghost" type="button" onclick={onresetlayout}>Reset layout</button>
     {/if}
@@ -133,7 +161,9 @@
     >
       desk
     </button>
-    {#if $privyAuth.authenticated}
+    <div class="account-bay">
+    {#if $privyAuth.authenticated && !paperMode}
+      <div class="account-slot" in:fade|local={{ duration: 160 }} out:fade|local={{ duration: 120 }}>
       <div class="account-menu">
         <button
           class="account-trigger"
@@ -153,6 +183,8 @@
             class="account-dropdown"
             role="menu"
             tabindex="-1"
+            in:fly={{ y: -4, duration: 160 }}
+            out:fade={{ duration: 100 }}
             onclick={(event) => event.stopPropagation()}
             onkeydown={(event) => event.stopPropagation()}
           >
@@ -244,30 +276,42 @@
           </div>
         {/if}
       </div>
+      </div>
+    {:else if paperMode}
+      <div class="account-slot" in:fade|local={{ duration: 160 }} out:fade|local={{ duration: 120 }}>
+        <button
+          class="secondary account-cta paper-funds-btn"
+          type="button"
+          onclick={onopenfunds}
+          title="Paper funds"
+        >
+          <small>Funds</small>
+          <strong>{paperFundsLabel || "$0"}</strong>
+        </button>
+      </div>
     {:else}
-      {#if !$privyAuth.configured}
-        <span class="connect-status error">
-          <span class="stream-dot offline" aria-hidden="true"></span>
-          Auth not configured
-        </span>
-      {:else if $privyAuth.status === "error"}
-        <span class="connect-status error">
-          <span class="stream-dot offline" aria-hidden="true"></span>
-          Connection failed
-        </span>
-      {/if}
+      <div class="account-slot" in:fade|local={{ duration: 160 }} out:fade|local={{ duration: 120 }}>
       <button
-        class="primary connect-btn"
+        class="primary connect-btn account-cta"
         type="button"
         disabled={$privyAuth.status === "loading" || !$privyAuth.configured}
         onclick={onopenauth}
+        title={
+          !$privyAuth.configured
+            ? "Live auth needs Privy — use PAPER for practice"
+            : $privyAuth.status === "error"
+              ? "Connection failed — retry"
+              : undefined
+        }
       >
         {#if $privyAuth.status === "loading"}
           <span class="spinner" aria-hidden="true"></span>
         {/if}
         {connectLabel}
       </button>
+      </div>
     {/if}
+    </div>
   </div>
 </header>
 
@@ -315,13 +359,124 @@
     justify-content: flex-end;
     min-width: 0;
     min-height: 2.3rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+  }
+
+  .mode-toggle {
+    position: relative;
+    display: inline-grid;
+    grid-template-columns: 3.4rem 3.4rem;
+    border: 1px solid var(--line);
+    border-radius: 0;
+    isolation: isolate;
+    flex-shrink: 0;
+  }
+
+  .mode-pill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 50%;
+    background: var(--paper);
+    z-index: 0;
+    transition: transform 220ms cubic-bezier(0.2, 0.85, 0.3, 1);
+    pointer-events: none;
+  }
+
+  .mode-toggle.is-paper .mode-pill {
+    transform: translateX(100%);
+    background: color-mix(in srgb, var(--accent) 18%, var(--paper));
+  }
+
+  .mode-toggle button {
+    position: relative;
+    z-index: 1;
+    appearance: none;
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 0.35rem 0;
+    cursor: pointer;
+    transition: color 180ms ease;
+  }
+
+  .mode-toggle button:hover {
+    color: var(--ink);
+  }
+
+  .mode-toggle button.active {
+    color: var(--ink);
+  }
+
+  .mode-toggle button.paper.active {
+    color: var(--accent);
+  }
+
+  /* Fixed bay so LIVE ↔ PAPER fades don't push Alerts/desk around.
+     Absolute slots can overlap during crossfade without growing the bar. */
+  .account-bay {
+    position: relative;
+    width: 11rem;
+    height: 2.2rem;
+    flex-shrink: 0;
+  }
+
+  .account-slot {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: stretch;
+  }
+
+  .account-cta,
+  .account-menu,
+  .account-trigger {
+    width: 100%;
+  }
+
+  .account-trigger {
+    justify-content: space-between;
+  }
+
+  .paper-funds-btn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.05rem;
+    min-height: 2.2rem;
+    padding: 0.25rem 0.6rem;
+    text-align: left;
+    line-height: 1.1;
+  }
+
+  .paper-funds-btn small {
+    color: var(--muted);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .paper-funds-btn strong {
+    font-size: 0.82rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
 
   .alerts-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
+    flex-shrink: 0;
+    transition:
+      color 160ms ease,
+      border-color 160ms ease,
+      background 160ms ease;
   }
 
   .alerts-count {
@@ -338,40 +493,23 @@
     font-weight: 800;
   }
 
-  .connect-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.74rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
-  .connect-status.error {
-    color: var(--red);
-  }
-
-  /* Only the offline dot renders here; the live/pulse variants belong to
-     the ticker rail's stream indicator. */
-  .stream-dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 50%;
-    background: var(--faint);
-    box-shadow: 0 0 0 0 rgba(255, 77, 151, 0.5);
-  }
-
-  .stream-dot.offline {
-    background: var(--red);
-  }
-
   .connect-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
-    min-width: 11rem;
+    min-width: 0;
     font-weight: 700;
+    transition: opacity 160ms ease, background 160ms ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mode-pill,
+    .mode-toggle button,
+    .alerts-btn,
+    .connect-btn {
+      transition: none !important;
+    }
   }
 
   .account-menu {
