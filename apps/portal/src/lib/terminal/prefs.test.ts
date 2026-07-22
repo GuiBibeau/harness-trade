@@ -50,6 +50,18 @@ describe("parsePrefs", () => {
     expect(prefs.tradeLeverage).toBe(10);
   });
 
+  test("accepts paperMode boolean", () => {
+    expect(parsePrefs(JSON.stringify({ paperMode: true })).paperMode).toBe(
+      true,
+    );
+    expect(parsePrefs(JSON.stringify({ paperMode: false })).paperMode).toBe(
+      false,
+    );
+    expect(
+      parsePrefs(JSON.stringify({ paperMode: "yes" })).paperMode,
+    ).toBeUndefined();
+  });
+
   test("rejects out-of-enum values field by field", () => {
     const prefs = parsePrefs(
       JSON.stringify({

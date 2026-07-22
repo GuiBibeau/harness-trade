@@ -68,6 +68,8 @@ export type TerminalPrefs = {
   showLevels: boolean;
   /** User-drawn horizontal rays per symbol (array order = placement order). */
   rays: Record<string, number[]>;
+  /** Simulated paper trading — local ledger, live market data. */
+  paperMode: boolean;
 };
 
 /** Rays per symbol — placing a 13th evicts the oldest (FIFO). */
@@ -179,6 +181,7 @@ export function parsePrefs(raw: string | null): Partial<TerminalPrefs> {
   if (typeof data.macroOpen === "boolean") prefs.macroOpen = data.macroOpen;
   if (typeof data.showLevels === "boolean") prefs.showLevels = data.showLevels;
   if (data.rays !== undefined) prefs.rays = parseRays(data.rays);
+  if (typeof data.paperMode === "boolean") prefs.paperMode = data.paperMode;
   return prefs;
 }
 
@@ -216,6 +219,7 @@ export function persistPrefs(
   _macroOpen: boolean,
   _showLevels: boolean,
   _rays: Record<string, number[]>,
+  _paperMode: boolean,
 ): void {
   if (typeof window === "undefined") return;
   try {
@@ -241,6 +245,7 @@ export function persistPrefs(
         macroOpen: _macroOpen,
         showLevels: _showLevels,
         rays: _rays,
+        paperMode: _paperMode,
       }),
     );
   } catch {

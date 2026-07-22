@@ -39,6 +39,7 @@
     marginUsedPct,
     selectedLiqDistancePct,
     accountUpnlUsd,
+    paperMode = false,
     // Submit gating + status (the signing pipeline stays in the page).
     canSubmit,
     orderBusy,
@@ -86,6 +87,7 @@
     marginUsedPct: number;
     selectedLiqDistancePct: number | null;
     accountUpnlUsd: number;
+    paperMode?: boolean;
     canSubmit: boolean;
     orderBusy: boolean;
     orderStageEntry: TxStageEntry | null;
@@ -433,11 +435,20 @@
     class="ticket-status"
     class:error={Boolean(actionError)}
     title={actionErrorDetail || undefined}
+    role="status"
+    aria-live="polite"
   >
     {#if actionError}
       {actionError}
       {#if actionRetry}
         <button class="row-action" type="button" onclick={actionRetry}>Retry</button>
+      {/if}
+    {:else if paperMode}
+      {#if lastTradeSignature}
+        {$tradeType === "market" || limitCrossesBook ? "Paper order filled" : "Paper order placed"}
+        · ref {lastTradeSignature}
+      {:else}
+        &nbsp;
       {/if}
     {:else if orderStageEntry}
       {txStageText(orderStageEntry, nowMs)}
@@ -449,7 +460,7 @@
     {/if}
   </p>
 
-  {#if !phoenixAuthority}
+  {#if !phoenixAuthority && !paperMode}
     <button class="primary wide" type="button" onclick={onopenauth}>
       Connect account to trade
     </button>
@@ -462,9 +473,9 @@
     </button>
   {:else if $needsPhoenixFunding}
     <button class="primary wide" type="button" onclick={onopenfunds}>
-      Deposit first · ${formatNumber(Math.max(0, $requiredMarginUsd - phoenixCollateral), 2)}
+      {paperMode ? "Top up paper" : "Deposit first"} · ${formatNumber(Math.max(0, $requiredMarginUsd - phoenixCollateral), 2)}
     </button>
-  {:else if perpGate.show}
+  {:else if perpGate.show && !paperMode}
     <div class="perp-gate" role="status">
       <p>One step left: activate perp access with the Harness invite — a single signature, then deposit and trade.</p>
       <button
@@ -500,7 +511,7 @@
               ? "Set a stop loss to size"
               : !$tradePreview
                 ? "Enter a size"
-                : `${$tradeSide === "buy" ? "Long" : "Short"} ${selectedSymbol}-PERP · ${$tradeLeverage}x`}
+                : `${paperMode ? "PAPER · " : ""}${$tradeSide === "buy" ? "Long" : "Short"} ${selectedSymbol}-PERP · ${$tradeLeverage}x`}
     </button>
   {/if}
 </div>

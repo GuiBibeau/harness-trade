@@ -54,6 +54,7 @@
     cancelSweepBusy,
     marginAddKey,
     marginAddValue = $bindable(),
+    paperMode = false,
     ontrade,
     ondeposit,
     onselectsymbol,
@@ -65,6 +66,7 @@
     onflatten,
     onmarginopen,
     onmarginsubmit,
+    onresetpaper,
   }: {
     authority: string;
     trader: PhoenixTraderState | null;
@@ -95,6 +97,7 @@
     cancelSweepBusy: boolean;
     marginAddKey: string | null;
     marginAddValue: string;
+    paperMode?: boolean;
     // Every money handler stays in the page (signing plumbing) — the panel
     // only reports intent through these callbacks.
     ontrade: (side: "buy" | "sell") => void;
@@ -108,6 +111,7 @@
     onflatten: () => void;
     onmarginopen: (position: PhoenixPosition) => void;
     onmarginsubmit: (position: PhoenixPosition) => void;
+    onresetpaper?: () => void;
   } = $props();
 
   const {
@@ -141,7 +145,11 @@
   ondrop={(event) => onPanelDrop(event, "perp")}
 >
   <div class="panel-head">
-    <DragHead panelId="perp" kicker="PERP_DESK" title="Phoenix account" />
+    <DragHead
+      panelId="perp"
+      kicker={paperMode ? "PAPER_DESK" : "PERP_DESK"}
+      title={paperMode ? "Paper account" : "Phoenix account"}
+    />
     {#if positions.length > 0}
       <!-- Two-stage armed; fixed width so the relabel never shifts layout. -->
       <button
@@ -153,6 +161,11 @@
       >
         {#if flattenBusy}<span class="spinner" aria-hidden="true"></span>{/if}
         {flattenBusy ? "Flattening…" : flattenArmed ? "Confirm flatten" : "FLATTEN"}
+      </button>
+    {/if}
+    {#if paperMode && onresetpaper}
+      <button class="row-action" type="button" onclick={onresetpaper} title="Reset paper balance to $10,000">
+        Reset
       </button>
     {/if}
     <button class="primary" type="button" onclick={() => ontrade("buy")}>Trade</button>
@@ -192,7 +205,7 @@
           </b>
         </div>
       {/if}
-      <button class="row-action" type="button" onclick={ondeposit}>Deposit</button>
+      <button class="row-action" type="button" onclick={ondeposit}>{paperMode ? "Top up" : "Deposit"}</button>
     </div>
 
     {#if trader.positions.length > 0}
@@ -438,7 +451,11 @@
   {:else if authority}
     <div class="empty">Loading Phoenix account…</div>
   {:else}
-    <div class="empty">Connect your account to trade on Phoenix.</div>
+    <div class="empty">
+      {paperMode
+        ? "Paper desk ready — place a trade to start."
+        : "Connect your account to trade on Phoenix."}
+    </div>
   {/if}
 
   <div class="table">

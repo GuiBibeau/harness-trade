@@ -138,8 +138,14 @@
       {#if !privyConfig.appId}
         <div class="auth-callout error">
           <strong>Auth is not configured</strong>
-          <span>Set <code>PUBLIC_PRIVY_APP_ID</code> (or <code>VITE_PRIVY_APP_ID</code> / <code>NEXT_PUBLIC_PRIVY_APP_ID</code>) for this frontend, then reload.</span>
+          <span>This local build has no Privy app ID, so live wallet login isn’t available.</span>
         </div>
+        <button class="primary wide" type="button" onclick={() => onclose()}>
+          Continue without login
+        </button>
+        <p class="auth-lead">
+          Use the <b>PAPER</b> toggle in the topbar to practice with simulated funds — no wallet needed.
+        </p>
       {:else if betaClosed}
         <div class="beta-closed">
           <div class="auth-callout notice">
@@ -219,7 +225,7 @@
         {/if}
       {/if}
 
-      {#if authNote && !$privyAuth.authenticated}
+      {#if authNote && !$privyAuth.authenticated && privyConfig.appId}
         <p class="auth-note" class:error={authNoteIsError}>{authNote}</p>
       {/if}
     </div>
@@ -340,12 +346,6 @@
 
   .auth-callout span {
     color: var(--muted);
-  }
-
-  .auth-callout code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.74rem;
-    color: var(--blue);
   }
 
   .auth-success {
