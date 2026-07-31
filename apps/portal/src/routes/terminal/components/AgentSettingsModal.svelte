@@ -95,7 +95,7 @@
 
   .settings-modal {
     width: min(52rem, 100%);
-    max-height: min(44rem, calc(100dvh - 2rem));
+    height: min(44rem, calc(100dvh - 2rem));
     overflow: hidden;
     border: 1px solid var(--line);
     background: var(--surface);
@@ -190,6 +190,7 @@
   .settings-content {
     min-width: 0;
     overflow: auto;
+    scrollbar-gutter: stable;
     padding: 1rem 1.1rem 1.5rem;
   }
 
