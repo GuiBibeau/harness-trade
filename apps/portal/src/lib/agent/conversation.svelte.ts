@@ -12,15 +12,25 @@ import {
 } from "eve/svelte";
 import { onMount } from "svelte";
 import { AGENT_ACTION_META, type AgentActionName } from "./actions";
+import {
+  activateAgentConversation,
+  activeAgentConversation,
+  addAgentConversation,
+  archiveAgentConversation as archiveHistoryConversation,
+  createAgentConversationRecord,
+  initializeAgentConversationHistory,
+  restoreAgentConversation as restoreHistoryConversation,
+  saveAgentConversationHistory,
+  summarizeAgentConversations,
+  titleFromMessage,
+  updateAgentConversation,
+} from "./conversation-history";
 import type { AgentActionExecutor } from "./host";
 import {
   type AgentPaperActionReceipt,
   type AgentThreadSnapshot,
   type AgentThreadStorage,
-  clearAgentThread,
-  loadAgentThread,
   prepareAgentThreadForResume,
-  saveAgentThread,
 } from "./thread-cache";
 
 export type AgentConversationOptions = {
@@ -64,12 +74,20 @@ export type AgentConversationMessage = {
  * behind this interface.
  */
 export function createAgentConversation(options: AgentConversationOptions) {
-  const cachedThread = options.storage
-    ? loadAgentThread(options.storage)
+  let history = options.storage
+    ? initializeAgentConversationHistory(options.storage)
     : null;
-  const restoredThread = cachedThread
-    ? prepareAgentThreadForResume(cachedThread)
+  const initialConversation = history ? activeAgentConversation(history) : null;
+  const restoredThread = initialConversation
+    ? prepareAgentThreadForResume(initialConversation.thread)
     : null;
+  let activeConversationId = $state(initialConversation?.id ?? "");
+  let conversationTitle = $state(
+    initialConversation?.title ?? "New conversation",
+  );
+  let conversations = $state(
+    history ? summarizeAgentConversations(history) : [],
+  );
   let paperActionReceipts = $state<Record<string, AgentPaperActionReceipt>>({
     ...(restoredThread?.paperActionReceipts ?? {}),
   });
@@ -80,6 +98,7 @@ export function createAgentConversation(options: AgentConversationOptions) {
   let reconnecting = $state(isSessionState(restoredThread?.session));
   let recoveryError = $state("");
   let eve = $state.raw(createAgent(restoredThread));
+  let recoveryController: AbortController | null = null;
 
   const working = $derived(
     eve.status === "submitted" || eve.status === "streaming",
@@ -126,9 +145,8 @@ export function createAgentConversation(options: AgentConversationOptions) {
 
   onMount(() => {
     if (!reconnecting || !restoredThread) return;
-    const controller = new AbortController();
-    void recover(restoredThread, controller.signal);
-    return () => controller.abort();
+    beginRecovery(restoredThread);
+    return () => recoveryController?.abort();
   });
 
   function createAgent(thread: AgentThreadSnapshot | null) {
@@ -193,14 +211,19 @@ export function createAgentConversation(options: AgentConversationOptions) {
   }
 
   function persistSnapshot(session: unknown, events: readonly unknown[]): void {
-    if (!options.storage) return;
+    if (!options.storage || !history || !activeConversationId) return;
     try {
-      saveAgentThread(options.storage, {
-        session,
-        events,
-        paperActionRuns: [...paperActionRuns],
-        paperActionReceipts,
+      history = updateAgentConversation(history, activeConversationId, {
+        title: conversationTitle,
+        thread: {
+          session,
+          events,
+          paperActionRuns: [...paperActionRuns],
+          paperActionReceipts,
+        },
       });
+      saveAgentConversationHistory(options.storage, history);
+      refreshConversationSummaries();
     } catch {
       // A private browser or exhausted quota should not break the Conversation.
     }
@@ -211,6 +234,10 @@ export function createAgentConversation(options: AgentConversationOptions) {
   }
 
   function send(message: string): Promise<void> {
+    if (conversationTitle === "New conversation") {
+      conversationTitle = titleFromMessage(message);
+      persistCurrent();
+    }
     return eve.send({
       message,
       clientContext: options.buildClientContext(),
@@ -231,18 +258,104 @@ export function createAgentConversation(options: AgentConversationOptions) {
     return requestId ? respond(requestId, approved) : Promise.resolve();
   }
 
-  function reset(): void {
+  function newConversation(): void {
+    persistCurrent();
+    recoveryController?.abort();
+    eve.stop();
+    const record = createAgentConversationRecord();
+    if (history && options.storage) {
+      history = addAgentConversation(history, record);
+      saveAgentConversationHistory(options.storage, history);
+    }
+    mountConversation(record);
+  }
+
+  function resumeConversation(id: string): void {
+    if (!history || id === activeConversationId) return;
+    persistCurrent();
+    const record = history.conversations.find(
+      (conversation) => conversation.id === id && !conversation.archivedAt,
+    );
+    if (!record) return;
+    history = activateAgentConversation(history, id);
+    if (options.storage) saveAgentConversationHistory(options.storage, history);
+    mountConversation(record);
+  }
+
+  function archiveConversation(id: string): void {
+    if (!history || !options.storage) return;
+    persistCurrent();
+    history = archiveHistoryConversation(history, id);
+    saveAgentConversationHistory(options.storage, history);
+    if (id !== activeConversationId) {
+      refreshConversationSummaries();
+      return;
+    }
+    const next = [...history.conversations]
+      .filter((conversation) => !conversation.archivedAt)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    if (next) {
+      history = activateAgentConversation(history, next.id);
+      saveAgentConversationHistory(options.storage, history);
+      mountConversation(next);
+      return;
+    }
+    newConversation();
+  }
+
+  function restoreConversation(id: string): void {
+    if (!history || !options.storage) return;
+    persistCurrent();
+    history = restoreHistoryConversation(history, id);
+    const record = history.conversations.find(
+      (conversation) => conversation.id === id,
+    );
+    if (!record) return;
+    saveAgentConversationHistory(options.storage, history);
+    mountConversation(record);
+  }
+
+  function mountConversation(record: {
+    id: string;
+    title: string;
+    thread: AgentThreadSnapshot;
+  }): void {
+    recoveryController?.abort();
+    eve.stop();
+    const prepared = prepareAgentThreadForResume(record.thread);
+    activeConversationId = record.id;
+    conversationTitle = record.title;
+    paperActionReceipts = { ...(prepared.paperActionReceipts ?? {}) };
     paperActionRuns.clear();
-    paperActionReceipts = {};
+    for (const callId of prepared.paperActionRuns ?? []) {
+      paperActionRuns.add(callId);
+    }
     recoveryError = "";
-    reconnecting = false;
-    eve.reset();
-    if (options.storage) clearAgentThread(options.storage);
+    reconnecting = isSessionState(prepared.session);
+    eve = createAgent(prepared);
+    refreshConversationSummaries();
+    if (reconnecting) beginRecovery(prepared);
+  }
+
+  function beginRecovery(thread: AgentThreadSnapshot): void {
+    recoveryController?.abort();
+    recoveryController = new AbortController();
+    void recover(thread, recoveryController.signal);
+  }
+
+  function refreshConversationSummaries(): void {
+    conversations = history ? summarizeAgentConversations(history) : [];
   }
 
   return {
     get busy() {
       return busy;
+    },
+    get activeConversationId() {
+      return activeConversationId;
+    },
+    get conversations() {
+      return conversations;
     },
     get error() {
       return eve.error;
@@ -268,8 +381,11 @@ export function createAgentConversation(options: AgentConversationOptions) {
     paperReceipt(toolCallId: string) {
       return paperActionReceipts[toolCallId];
     },
+    archiveConversation,
+    newConversation,
     persist: persistCurrent,
-    reset,
+    restoreConversation,
+    resumeConversation,
     respondToTool,
     send,
   };

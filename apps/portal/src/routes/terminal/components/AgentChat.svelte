@@ -25,11 +25,21 @@
   import { getPrivyAccessToken, privyAuth } from "$lib/privy-auth";
   import { llmProfileHeaderValue } from "$lib/agent/llm-profile-selection";
   import { projectPriceQuote } from "$lib/agent/price-presentation";
+  import {
+    fetchAgentSkills,
+    type SkillListItem,
+  } from "$lib/agent/skills-api";
+  import {
+    filterMentionedSkills,
+    findSkillMention,
+    insertSkillMention,
+  } from "$lib/agent/skill-mentions";
+  import AgentConversationHistory from "./AgentConversationHistory.svelte";
+  import AgentSettingsModal from "./AgentSettingsModal.svelte";
+  import AgentSkillPalette from "./AgentSkillPalette.svelte";
   import MarkdownMessage from "./MarkdownMessage.svelte";
   import PriceQuoteCard from "./PriceQuoteCard.svelte";
   import ToolActivity from "./ToolActivity.svelte";
-  import AgentSkillsPanel from "./AgentSkillsPanel.svelte";
-  import AgentModelsPanel from "./AgentModelsPanel.svelte";
 
   let {
     buildContext,
@@ -54,6 +64,17 @@
   let draft = $state("");
   let scrollEl: HTMLDivElement | null = $state(null);
   let inputEl: HTMLTextAreaElement | null = $state(null);
+  let settingsOpen = $state(false);
+  let settingsSection = $state<"models" | "skills">("models");
+  let historyOpen = $state(false);
+  let availableSkills = $state<SkillListItem[]>([]);
+  let skillsLoading = $state(false);
+  let skillsLoadedAt = 0;
+  let skillLoadError = $state<string | null>(null);
+  let skillPaletteOpen = $state(false);
+  let skillQuery = $state("");
+  let skillMentionStart = $state(-1);
+  let skillPaletteIndex = $state(0);
   let handledFocusComposerRequest = 0;
   const agentModes: AgentMode[] = ["observe", "ask", "auto"];
   const conversation = createAgentConversation({
@@ -99,6 +120,9 @@
         ["pending", "running", "waiting"].includes(projectPart(part).status),
       ),
   );
+  const matchingSkills = $derived(
+    filterMentionedSkills(availableSkills, skillQuery),
+  );
 
   $effect(() => {
     if (!scrollEl) return;
@@ -120,9 +144,89 @@
     inputEl.focus();
   });
 
+  $effect(() => {
+    if (skillPaletteIndex >= matchingSkills.length) {
+      skillPaletteIndex = Math.max(0, matchingSkills.length - 1);
+    }
+  });
+
+  async function loadSkills(): Promise<void> {
+    if (
+      skillsLoading ||
+      !$privyAuth.authenticated ||
+      (skillsLoadedAt > 0 && Date.now() - skillsLoadedAt < 5_000)
+    ) {
+      return;
+    }
+    skillsLoading = true;
+    skillLoadError = null;
+    try {
+      const data = await fetchAgentSkills();
+      availableSkills = [
+        ...data.builtins,
+        ...data.userSkills.filter((skill) => skill.enabled),
+      ];
+      skillsLoadedAt = Date.now();
+    } catch {
+      availableSkills = [];
+      skillsLoadedAt = Date.now();
+      skillLoadError = "Skills are unavailable. Open Agent settings to retry.";
+    } finally {
+      skillsLoading = false;
+    }
+  }
+
+  function updateSkillMention(value: string, cursor: number): void {
+    const mention = findSkillMention(value, cursor);
+    if (!mention) {
+      closeSkillPalette();
+      return;
+    }
+    skillMentionStart = mention.start;
+    skillQuery = mention.query;
+    skillPaletteIndex = 0;
+    skillPaletteOpen = true;
+    void loadSkills();
+  }
+
+  function onComposerInput(event: Event): void {
+    const textarea = event.currentTarget as HTMLTextAreaElement;
+    updateSkillMention(textarea.value, textarea.selectionStart);
+  }
+
+  function closeSkillPalette(): void {
+    skillPaletteOpen = false;
+    skillQuery = "";
+    skillMentionStart = -1;
+    skillPaletteIndex = 0;
+  }
+
+  function selectSkill(skill: SkillListItem): void {
+    if (!inputEl || skillMentionStart < 0) return;
+    const cursor = inputEl.selectionStart;
+    const insertion = insertSkillMention(
+      draft,
+      { start: skillMentionStart, query: skillQuery },
+      cursor,
+      skill.name,
+    );
+    draft = insertion.value;
+    closeSkillPalette();
+    requestAnimationFrame(() => {
+      inputEl?.focus();
+      inputEl?.setSelectionRange(insertion.cursor, insertion.cursor);
+    });
+  }
+
+  function openSettings(section: "models" | "skills"): void {
+    settingsSection = section;
+    settingsOpen = true;
+  }
+
   function sendMessage(value: string): void {
     const text = value.trim();
     if (!text || busy) return;
+    closeSkillPalette();
     draft = "";
     void conversation.send(text);
     inputEl?.focus();
@@ -134,6 +238,34 @@
   }
 
   function onKeydown(event: KeyboardEvent): void {
+    if (skillPaletteOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        skillPaletteIndex = Math.min(
+          skillPaletteIndex + 1,
+          Math.max(0, matchingSkills.length - 1),
+        );
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        skillPaletteIndex = Math.max(0, skillPaletteIndex - 1);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeSkillPalette();
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        const skill = matchingSkills[skillPaletteIndex];
+        if (skill) {
+          event.preventDefault();
+          selectSkill(skill);
+          return;
+        }
+      }
+    }
     if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
     event.preventDefault();
     (event.currentTarget as HTMLTextAreaElement).form?.requestSubmit();
@@ -214,8 +346,8 @@
     void conversation.respondToTool(toolCallId, approved);
   }
 
-  function resetSession(): void {
-    conversation.reset();
+  function newConversation(): void {
+    conversation.newConversation();
   }
 
   function handleExpand(): void {
@@ -271,8 +403,34 @@
       </div>
     </div>
     <div class="agent-head-right">
-      <AgentModelsPanel {onRequestAuth} />
-      <AgentSkillsPanel {onRequestAuth} />
+      <button
+        class="ghost icon"
+        class:active={historyOpen}
+        type="button"
+        aria-label="Conversation history"
+        title="Conversations"
+        onclick={() => (historyOpen = true)}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+          <path d="M3 3v5h5M12 7v5l3 2" />
+        </svg>
+      </button>
+      <button
+        class="ghost icon"
+        class:active={settingsOpen}
+        type="button"
+        aria-label="Agent settings"
+        title="Agent settings"
+        onclick={() => openSettings("models")}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.16.38.37.73.65 1 .3.27.68.4 1.08.4H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z"
+          />
+        </svg>
+      </button>
       <button
         class="ghost"
         class:pause-on={$agentState.paused}
@@ -282,7 +440,13 @@
       >
         {$agentState.paused ? "Resume" : "Pause"}
       </button>
-      <button class="ghost" type="button" onclick={resetSession} title="New durable session">
+      <button
+        class="ghost"
+        type="button"
+        disabled={busy}
+        onclick={newConversation}
+        title="New durable conversation"
+      >
         New
       </button>
       {#if layout === "dock" && onExpand}
@@ -381,6 +545,16 @@
 
   <form class="composer" onsubmit={submit}>
     <div class="composer-shell">
+      {#if skillPaletteOpen}
+        <AgentSkillPalette
+          items={matchingSkills}
+          activeIndex={skillPaletteIndex}
+          loading={skillsLoading}
+          error={skillLoadError}
+          onselect={selectSkill}
+          onhover={(index) => (skillPaletteIndex = index)}
+        />
+      {/if}
       {#if $agentState.paused}
         <p class="money-paused">Money actions paused · research remains available</p>
       {/if}
@@ -391,12 +565,15 @@
         bind:this={inputEl}
         bind:value={draft}
         rows={layout === "page" ? 3 : 2}
-        placeholder="e.g. long SOL $50 @ 3x market…"
+        placeholder="Message the agent · @ for skills"
         disabled={busy || !$privyAuth.authenticated}
         onkeydown={onKeydown}
+        oninput={onComposerInput}
       ></textarea>
       <div class="composer-bar">
-        <span class="composer-hint">Enter to send · Shift+Enter newline</span>
+        <span class="composer-hint">
+          Enter to send · Shift+Enter newline · @ skills
+        </span>
         <button
           class="secondary"
           type="submit"
@@ -408,6 +585,27 @@
     </div>
   </form>
 </div>
+
+{#if settingsOpen}
+  <AgentSettingsModal
+    initialSection={settingsSection}
+    {onRequestAuth}
+    onclose={() => (settingsOpen = false)}
+  />
+{/if}
+
+{#if historyOpen}
+  <AgentConversationHistory
+    conversations={conversation.conversations}
+    activeId={conversation.activeConversationId}
+    {busy}
+    onnew={() => conversation.newConversation()}
+    onresume={(id) => conversation.resumeConversation(id)}
+    onarchive={(id) => conversation.archiveConversation(id)}
+    onrestore={(id) => conversation.restoreConversation(id)}
+    onclose={() => (historyOpen = false)}
+  />
+{/if}
 
 <style>
   .agent-chat {
@@ -596,6 +794,33 @@
     color: var(--ink);
   }
 
+  .ghost:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .ghost.icon {
+    min-width: 2rem;
+    width: 2rem;
+    padding-inline: 0;
+    font-size: 0.86rem;
+  }
+
+  .ghost.icon svg {
+    width: 0.88rem;
+    height: 0.88rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: square;
+    stroke-linejoin: miter;
+  }
+
+  .ghost.active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
   .ghost.pause-on {
     color: var(--red);
   }
@@ -741,6 +966,7 @@
   }
 
   .composer-shell {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.4rem;

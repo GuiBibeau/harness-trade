@@ -23,7 +23,6 @@
     onRequestAuth: () => void;
   } = $props();
 
-  let open = $state(false);
   let loading = $state(false);
   let error = $state<string | null>(null);
   let catalog = $state<LlmCatalogProvider[]>([]);
@@ -39,6 +38,7 @@
   let discoveredModels = $state<DiscoveredLlmModel[]>([]);
   let discoveryReady = $state(false);
   let discovering = $state(false);
+  let loadedForAuthenticatedUser = false;
 
   const fallbackModelsForProvider = $derived(
     catalog.find((entry) => entry.id === provider)?.models ?? [],
@@ -80,14 +80,14 @@
     }
   }
 
-  async function toggleOpen(): Promise<void> {
-    if (!$privyAuth.authenticated) {
-      onRequestAuth();
-      return;
+  $effect(() => {
+    if ($privyAuth.authenticated && !loadedForAuthenticatedUser) {
+      loadedForAuthenticatedUser = true;
+      void refresh();
+    } else if (!$privyAuth.authenticated) {
+      loadedForAuthenticatedUser = false;
     }
-    open = !open;
-    if (open) await refresh();
-  }
+  });
 
   function resetDiscovery(): void {
     discoveryReady = false;
@@ -207,19 +207,7 @@
   }
 </script>
 
-<div class="models">
-  <button
-    class="ghost"
-    class:active={open}
-    type="button"
-    title="Bring your own model + API key"
-    onclick={() => void toggleOpen()}
-  >
-    Models
-  </button>
-
-  {#if open}
-    <section class="panel" aria-label="Agent models">
+<section class="settings-panel" aria-label="Agent models">
       <header>
         <h3>Models</h3>
         <p>
@@ -229,7 +217,14 @@
         </p>
       </header>
 
-      {#if loading}
+      {#if !$privyAuth.authenticated}
+        <div class="state">
+          <p>Sign in to manage model profiles.</p>
+          <button class="primary" type="button" onclick={onRequestAuth}>
+            Sign in
+          </button>
+        </div>
+      {:else if loading}
         <p class="state">Loading models…</p>
       {:else if error}
         <p class="state error">{error}</p>
@@ -347,14 +342,8 @@
         </button>
       </form>
     </section>
-  {/if}
-</div>
 
 <style>
-  .models {
-    position: relative;
-  }
-
   button.ghost {
     background: transparent;
     border: 1px solid var(--line);
@@ -363,11 +352,6 @@
     font-size: 12px;
     padding: 4px 8px;
     cursor: pointer;
-  }
-
-  button.ghost.active {
-    border-color: var(--accent);
-    color: var(--accent);
   }
 
   button.primary {
@@ -386,20 +370,9 @@
     cursor: not-allowed;
   }
 
-  .panel {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    z-index: 40;
-    width: min(440px, 92vw);
-    max-height: min(70vh, 680px);
-    overflow: auto;
-    background: var(--panel, #0f1115);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow-hard-sm, 3px 3px 0 #000);
-    padding: 12px;
+  .settings-panel {
     display: grid;
-    gap: 12px;
+    gap: 16px;
   }
 
   header h3,
@@ -413,13 +386,13 @@
   .state,
   .meta {
     margin: 0;
-    color: var(--muted, #9aa3b2);
+    color: var(--muted);
     font-size: 12px;
     line-height: 1.4;
   }
 
   .state.error {
-    color: var(--danger, #ff5c7a);
+    color: var(--red);
   }
 
   .choice {
@@ -446,7 +419,7 @@
   }
 
   button.danger {
-    color: var(--danger, #ff5c7a);
+    color: var(--red);
   }
 
   button.discover {
@@ -462,17 +435,17 @@
     display: grid;
     gap: 4px;
     font-size: 12px;
-    color: var(--muted, #9aa3b2);
+    color: var(--muted);
   }
 
   .hint {
-    color: var(--muted, #9aa3b2);
+    color: var(--muted);
     font-size: 11px;
   }
 
   input,
   select {
-    background: var(--bg, #0a0b0e);
+    background: var(--paper);
     color: var(--ink);
     border: 1px solid var(--line);
     font: inherit;

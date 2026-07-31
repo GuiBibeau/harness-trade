@@ -1,0 +1,5 @@
+interface:
+  display_name: Install a skill
+  short_description: Turn a request into a reusable Agent Skill.
+  default_prompt: create a skill that reviews my paper risk before a trade
+

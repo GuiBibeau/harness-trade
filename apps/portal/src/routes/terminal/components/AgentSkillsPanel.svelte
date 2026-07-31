@@ -14,28 +14,14 @@
     onRequestAuth: () => void;
   } = $props();
 
-  const EXAMPLE_SKILL = `---
-name: paper-risk-check
-description: >-
-  Run a quick paper-trading risk checklist before sizing up. Use when the user
-  asks for a pre-trade risk check or paper risk review.
----
-
-# Paper risk check
-
-1. Fetch a fresh quote and paper portfolio.
-2. List open size, leverage, and distance to liquidation when available.
-3. Suggest a conservative size; do not execute unless the user explicitly asks.
-`;
-
-  let open = $state(false);
   let loading = $state(false);
   let error = $state<string | null>(null);
   let builtins = $state<SkillListItem[]>([]);
   let userSkills = $state<SkillListItem[]>([]);
   let storeConfigured = $state(true);
-  let draft = $state(EXAMPLE_SKILL);
+  let draft = $state("");
   let busyName = $state<string | null>(null);
+  let loadedForAuthenticatedUser = false;
 
   async function refresh(): Promise<void> {
     if (!$privyAuth.authenticated) return;
@@ -53,14 +39,14 @@ description: >-
     }
   }
 
-  async function toggleOpen(): Promise<void> {
-    if (!$privyAuth.authenticated) {
-      onRequestAuth();
-      return;
+  $effect(() => {
+    if ($privyAuth.authenticated && !loadedForAuthenticatedUser) {
+      loadedForAuthenticatedUser = true;
+      void refresh();
+    } else if (!$privyAuth.authenticated) {
+      loadedForAuthenticatedUser = false;
     }
-    open = !open;
-    if (open) await refresh();
-  }
+  });
 
   async function onInstall(): Promise<void> {
     if (!$privyAuth.authenticated) {
@@ -71,7 +57,7 @@ description: >-
     error = null;
     try {
       await installAgentSkill({ skillMd: draft });
-      draft = EXAMPLE_SKILL;
+      draft = "";
       await refresh();
     } catch (err) {
       error = err instanceof Error ? err.message : "skills-install-failed";
@@ -107,29 +93,24 @@ description: >-
   }
 </script>
 
-<div class="skills">
-  <button
-    class="ghost"
-    class:active={open}
-    type="button"
-    title="Agent skills (Claude / Codex SKILL.md)"
-    onclick={() => void toggleOpen()}
-  >
-    Skills
-  </button>
-
-  {#if open}
-    <section class="panel" aria-label="Agent skills">
+<section class="settings-panel" aria-label="Agent skills">
       <header>
         <h3>Skills</h3>
         <p>
-          Claude Agent Skills and OpenAI Codex packages share the Agent Skills
-          <code>SKILL.md</code> format. Built-ins ship as packages; you can
-          install more for this account.
+          Type <code>@</code> in chat to invoke any enabled skill. Use
+          <code>@skill-installer</code> to create one conversationally, or
+          paste an existing <code>SKILL.md</code> below.
         </p>
       </header>
 
-      {#if loading}
+      {#if !$privyAuth.authenticated}
+        <div class="state">
+          <p>Sign in to manage skills.</p>
+          <button class="primary" type="button" onclick={onRequestAuth}>
+            Sign in
+          </button>
+        </div>
+      {:else if loading}
         <p class="state">Loading skills…</p>
       {:else if error}
         <p class="state error">{error}</p>
@@ -200,7 +181,7 @@ description: >-
       </div>
 
       <div class="install">
-        <h4>Install SKILL.md</h4>
+        <h4>Install manually</h4>
         <p class="hint">
           Paste a Claude or Codex skill file. Optional
           <code>agents/openai.yaml</code> and <code>references/*</code> can be
@@ -211,25 +192,22 @@ description: >-
           rows="10"
           spellcheck="false"
           aria-label="Skill markdown"
+          placeholder={"---\nname: my-skill\ndescription: When to use it.\n---\n\n# Instructions"}
         ></textarea>
         <button
           class="primary"
           type="button"
-          disabled={busyName === "__install__" || !storeConfigured}
+          disabled={busyName === "__install__" ||
+            !storeConfigured ||
+            !draft.trim()}
           onclick={() => void onInstall()}
         >
           Install skill
         </button>
       </div>
     </section>
-  {/if}
-</div>
 
 <style>
-  .skills {
-    position: relative;
-  }
-
   button.ghost {
     background: transparent;
     border: 1px solid var(--line);
@@ -238,11 +216,6 @@ description: >-
     font-size: 12px;
     padding: 4px 8px;
     cursor: pointer;
-  }
-
-  button.ghost.active {
-    border-color: var(--accent);
-    color: var(--accent);
   }
 
   button.primary {
@@ -261,20 +234,9 @@ description: >-
     cursor: not-allowed;
   }
 
-  .panel {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    z-index: 40;
-    width: min(420px, 92vw);
-    max-height: min(70vh, 640px);
-    overflow: auto;
-    background: var(--panel, #0f1115);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow-hard-sm, 3px 3px 0 #000);
-    padding: 12px;
+  .settings-panel {
     display: grid;
-    gap: 12px;
+    gap: 16px;
   }
 
   header h3,
@@ -289,13 +251,13 @@ description: >-
   li p,
   .state {
     margin: 0;
-    color: var(--muted, #9aa3b2);
+    color: var(--muted);
     font-size: 12px;
     line-height: 1.4;
   }
 
   .state.error {
-    color: var(--danger, #ff5c7a);
+    color: var(--red);
   }
 
   ul {
@@ -315,7 +277,7 @@ description: >-
 
   .meta {
     display: block;
-    color: var(--faint, #6b7280);
+    color: var(--faint);
     font-size: 11px;
     margin-top: 2px;
   }
@@ -326,13 +288,13 @@ description: >-
   }
 
   button.danger {
-    color: var(--danger, #ff5c7a);
+    color: var(--red);
   }
 
   textarea {
     width: 100%;
     box-sizing: border-box;
-    background: var(--bg, #0a0b0e);
+    background: var(--paper);
     color: var(--ink);
     border: 1px solid var(--line);
     font: inherit;

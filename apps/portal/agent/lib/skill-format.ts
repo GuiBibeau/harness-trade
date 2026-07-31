@@ -1,8 +1,11 @@
 // Claude Agent Skills + OpenAI Codex skill package parsing.
 // Shared Agent Skills standard: skill-name/SKILL.md with name + description.
 // Codex optional sidecar: agents/openai.yaml (UI metadata only).
+import { BUILTIN_SKILLS } from "./builtin-skill-catalog";
 
-export const RESERVED_SKILL_NAMES = new Set(["plan-trade", "create-routine"]);
+export const RESERVED_SKILL_NAMES = new Set<string>(
+  BUILTIN_SKILLS.map((skill) => skill.name),
+);
 
 export const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 

@@ -1,4 +1,5 @@
 import { json } from "@sveltejs/kit";
+import { BUILTIN_SKILLS } from "$agent/lib/builtin-skill-catalog";
 import { SkillFormatException } from "$agent/lib/skill-format";
 import {
   isSkillStoreConfigured,
@@ -8,28 +9,13 @@ import {
 import { verifyPrivyAccessToken } from "$lib/server/privy";
 import type { RequestHandler } from "./$types";
 
-const BUILTINS = [
-  {
-    name: "plan-trade",
-    description:
-      "Plan, execute, and verify a trade or position-management request without inventing transaction parameters.",
-    source: "builtin" as const,
-    format: "agentskills" as const,
-    enabled: true,
-    loadSkillId: "plan-trade",
-    hasOpenaiYaml: true,
-  },
-  {
-    name: "create-routine",
-    description:
-      "Create or change a recurring market review, alert, or bounded position-management Routine and its optional Mandate.",
-    source: "builtin" as const,
-    format: "agentskills" as const,
-    enabled: true,
-    loadSkillId: "create-routine",
-    hasOpenaiYaml: true,
-  },
-];
+const BUILTINS = BUILTIN_SKILLS.map((skill) => ({
+  ...skill,
+  source: "builtin" as const,
+  format: "agentskills" as const,
+  enabled: true,
+  loadSkillId: skill.name,
+}));
 
 async function requireUser(request: Request): Promise<string | Response> {
   const authorization = request.headers.get("authorization") ?? "";

@@ -1,6 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { requireAgentPrincipal } from "../lib/auth";
+import { BUILTIN_SKILLS } from "../lib/builtin-skill-catalog";
 import { skillStore } from "../lib/skill-store";
 
 export default defineTool({
@@ -24,18 +25,10 @@ export default defineTool({
       fileCount: Object.keys(skill.files).length,
     }));
     return {
-      builtins: [
-        {
-          name: "plan-trade",
-          description:
-            "Plan, execute, and verify a trade or position-management request.",
-        },
-        {
-          name: "create-routine",
-          description:
-            "Create or change a recurring review, alert, or Routine/Mandate.",
-        },
-      ],
+      builtins: BUILTIN_SKILLS.map(({ name, description }) => ({
+        name,
+        description,
+      })),
       userSkills: rows,
     };
   },
