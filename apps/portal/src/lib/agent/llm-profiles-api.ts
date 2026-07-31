@@ -1,6 +1,9 @@
+import type { LlmProviderId } from "$agent/lib/llm-catalog";
+import type { DiscoveredLlmModel } from "$agent/lib/llm-model-discovery";
 import { getPrivyAccessToken } from "$lib/privy-auth";
 
-export type LlmProviderId = "deepseek" | "openai" | "anthropic";
+export type { DiscoveredLlmModel };
+export type { LlmProviderId };
 
 export type LlmProfilePublic = {
   id: string;
@@ -68,6 +71,25 @@ export async function createLlmProfile(input: {
     throw new Error(body.error ?? `llm-create-${response.status}`);
   }
   return body.profile;
+}
+
+export async function discoverLlmModels(input: {
+  provider: LlmProviderId;
+  apiKey: string;
+}): Promise<DiscoveredLlmModel[]> {
+  const response = await fetch("/api/agent/llm-profiles/discover", {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(input),
+  });
+  const body = (await response.json()) as {
+    models?: DiscoveredLlmModel[];
+    error?: string;
+  };
+  if (!response.ok || !Array.isArray(body.models)) {
+    throw new Error(body.error ?? `llm-discovery-${response.status}`);
+  }
+  return body.models;
 }
 
 export async function updateLlmProfile(

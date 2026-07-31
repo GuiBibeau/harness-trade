@@ -1,7 +1,7 @@
-// Allowlisted LLM providers for user BYOK profiles.
-// Keys stay server-side; the browser only sends them on write and never reads them back.
+// Supported LLM providers plus preview models shown before live discovery.
+// Keys stay server-side after write and never return to the browser.
 
-export type LlmProviderId = "deepseek" | "openai" | "anthropic";
+export type LlmProviderId = "deepseek" | "openai" | "anthropic" | "xai";
 
 export type LlmModelOption = {
   id: string;
@@ -22,8 +22,7 @@ export const LLM_PROVIDERS: readonly LlmProviderOption[] = [
     keyHint: "DEEPSEEK_API_KEY from platform.deepseek.com",
     models: [
       { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-      { id: "deepseek-chat", label: "DeepSeek Chat" },
-      { id: "deepseek-reasoner", label: "DeepSeek Reasoner" },
+      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
     ],
   },
   {
@@ -47,6 +46,20 @@ export const LLM_PROVIDERS: readonly LlmProviderOption[] = [
       { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
     ],
   },
+  {
+    id: "xai",
+    label: "xAI",
+    keyHint: "XAI_API_KEY from console.x.ai",
+    models: [
+      { id: "grok-4.5", label: "Grok 4.5" },
+      { id: "grok-4.3", label: "Grok 4.3" },
+      { id: "grok-4.20-0309-reasoning", label: "Grok 4.20 Reasoning" },
+      {
+        id: "grok-4.20-0309-non-reasoning",
+        label: "Grok 4.20 Non-Reasoning",
+      },
+    ],
+  },
 ] as const;
 
 export function isLlmProviderId(value: string): value is LlmProviderId {
@@ -59,11 +72,8 @@ export function providerModels(provider: LlmProviderId): LlmModelOption[] {
   );
 }
 
-export function isAllowedModel(
-  provider: LlmProviderId,
-  model: string,
-): boolean {
-  return providerModels(provider).some((entry) => entry.id === model);
+export function isSafeLlmModelId(model: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model);
 }
 
 export function apiKeyLast4(apiKey: string): string {

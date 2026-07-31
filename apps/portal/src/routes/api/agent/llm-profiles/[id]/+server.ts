@@ -1,22 +1,12 @@
 import { json } from "@sveltejs/kit";
 import { isLlmProviderId, type LlmProviderId } from "$agent/lib/llm-catalog";
+import { assertProviderModelAvailable } from "$agent/lib/llm-model-discovery";
 import {
   isLlmProfileStoreConfigured,
   llmProfileStore,
 } from "$agent/lib/llm-profile-store";
-import { verifyPrivyAccessToken } from "$lib/server/privy";
+import { readJsonRecord, requireAgentUser } from "$lib/server/agent-api";
 import type { RequestHandler } from "./$types";
-
-async function requireUser(request: Request): Promise<string | Response> {
-  const authorization = request.headers.get("authorization") ?? "";
-  const token = authorization.startsWith("Bearer ")
-    ? authorization.slice(7).trim()
-    : "";
-  if (!token) return json({ error: "auth-required" }, { status: 401 });
-  const userId = await verifyPrivyAccessToken(token);
-  if (!userId) return json({ error: "auth-invalid" }, { status: 401 });
-  return userId;
-}
 
 export const PATCH: RequestHandler = async ({
   request,
@@ -24,23 +14,15 @@ export const PATCH: RequestHandler = async ({
   setHeaders,
 }) => {
   setHeaders({ "cache-control": "no-store" });
-  const user = await requireUser(request);
+  const user = await requireAgentUser(request);
   if (user instanceof Response) return user;
   if (!isLlmProfileStoreConfigured()) {
     return json({ error: "llm-store-unconfigured" }, { status: 503 });
   }
 
   const id = params.id?.trim() ?? "";
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "invalid-body" }, { status: 400 });
-  }
-  if (!body || typeof body !== "object") {
-    return json({ error: "invalid-body" }, { status: 400 });
-  }
-  const record = body as Record<string, unknown>;
+  const record = await readJsonRecord(request);
+  if (record instanceof Response) return record;
   const patch: {
     name?: string;
     provider?: LlmProviderId;
@@ -59,8 +41,26 @@ export const PATCH: RequestHandler = async ({
   if (typeof record.active === "boolean") patch.active = record.active;
 
   try {
+    if (
+      patch.provider !== undefined ||
+      patch.model !== undefined ||
+      patch.apiKey !== undefined
+    ) {
+      const current =
+        patch.apiKey !== undefined
+          ? await llmProfileStore.getPublic(user, id)
+          : await llmProfileStore.get(user, id);
+      if (!current) {
+        return json({ error: "llm-profile-not-found" }, { status: 404 });
+      }
+      const provider = patch.provider ?? current.provider;
+      const model = patch.model ?? current.model;
+      const apiKey =
+        patch.apiKey ?? ("apiKey" in current ? current.apiKey : "");
+      await assertProviderModelAvailable({ provider, apiKey, model });
+    }
     const profile = await llmProfileStore.update(user, id, patch);
-    return json({ profile: llmProfileStore.summarize([profile])[0] });
+    return json({ profile });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "llm-store-error";
     if (message === "agent-state-object-not-found") {
@@ -77,7 +77,7 @@ export const DELETE: RequestHandler = async ({
   setHeaders,
 }) => {
   setHeaders({ "cache-control": "no-store" });
-  const user = await requireUser(request);
+  const user = await requireAgentUser(request);
   if (user instanceof Response) return user;
   if (!isLlmProfileStoreConfigured()) {
     return json({ error: "llm-store-unconfigured" }, { status: 503 });

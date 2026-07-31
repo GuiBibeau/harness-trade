@@ -15,6 +15,7 @@
     "@ai-sdk/anthropic": "^4.0.24",
     "@ai-sdk/deepseek": "^3.0.16",
     "@ai-sdk/openai": "^4.0.24",
+    "@ai-sdk/xai": "^4.0.23",
     "@ellipsis-labs/rise": "^0.4.60",
     "@harness-trade/ui": "workspace:*",
     "@noble/hashes": "1.8.0",

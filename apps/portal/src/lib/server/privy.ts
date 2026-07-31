@@ -165,8 +165,8 @@ let jwksCache: { keys: PrivyJwk[]; at: number } | null = null;
 export async function verifyPrivyAccessToken(
   token: string,
 ): Promise<string | null> {
-  const creds = readCredentials();
-  if (!creds) return null;
+  const appId = readAppId();
+  if (!appId) return null;
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
@@ -182,15 +182,15 @@ export async function verifyPrivyAccessToken(
     ) as { iss?: unknown; aud?: unknown; exp?: unknown; sub?: unknown };
     if (payload.iss !== "privy.io") return null;
     const audOk = Array.isArray(payload.aud)
-      ? payload.aud.includes(creds.appId)
-      : payload.aud === creds.appId;
+      ? payload.aud.includes(appId)
+      : payload.aud === appId;
     if (!audOk) return null;
     if (typeof payload.exp !== "number" || payload.exp * 1000 <= Date.now()) {
       return null;
     }
     if (typeof payload.sub !== "string" || !payload.sub) return null;
 
-    const keys = await fetchJwks(creds.appId);
+    const keys = await fetchJwks(appId);
     if (!keys || keys.length === 0) return null;
     // Prefer the kid match; fall back to trying every key so a rotation
     // between our cache refreshes cannot reject a valid token.
@@ -249,16 +249,20 @@ async function fetchJwks(appId: string): Promise<PrivyJwk[] | null> {
 }
 
 function readCredentials(): PrivyCredentials | null {
+  const appId = readAppId();
+  const appSecret = cleanEnv(privateEnv.PRIVY_APP_SECRET);
+  if (!appId || !appSecret) return null;
+  return { appId, appSecret };
+}
+
+function readAppId(): string {
   // Same app-id names the client reads (privy-auth.ts readPrivyConfig);
   // PUBLIC_-prefixed vars live in the public env, the rest in private.
-  const appId = cleanEnv(
+  return cleanEnv(
     publicEnv.PUBLIC_PRIVY_APP_ID ??
       privateEnv.VITE_PRIVY_APP_ID ??
       privateEnv.NEXT_PUBLIC_PRIVY_APP_ID,
   );
-  const appSecret = cleanEnv(privateEnv.PRIVY_APP_SECRET);
-  if (!appId || !appSecret) return null;
-  return { appId, appSecret };
 }
 
 function privyHeaders(creds: PrivyCredentials): Record<string, string> {

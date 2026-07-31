@@ -6,6 +6,24 @@ export default defineConfig(({ mode }) => {
   // Load all env vars (no prefix filter) so server-side secrets are available
   // to the dev proxies without ever being exposed to the client bundle.
   const env = loadEnv(mode, process.cwd(), "");
+  // EVE and the server-only agent stores read process.env. Vite loads .env
+  // files into its own map, so explicitly bridge only the agent's server-side
+  // inputs during local development. Vite does not expose these to clients.
+  for (const name of [
+    "AGENT_WALLET_MASTER_SECRET",
+    "BLOB_READ_WRITE_TOKEN",
+    "DEEPSEEK_API_KEY",
+    "LLM_PROFILE_ENCRYPTION_KEY",
+    "LLM_PROFILE_ENCRYPTION_KEY_PREVIOUS",
+    "NEXT_PUBLIC_PRIVY_APP_ID",
+    "PUBLIC_PRIVY_APP_ID",
+    "PUBLIC_SOLANA_RPC_URL",
+    "SOLANA_RPC_URL",
+    "TOKENS_XYZ_API_KEY",
+    "VITE_PRIVY_APP_ID",
+  ]) {
+    if (!process.env[name] && env[name]) process.env[name] = env[name];
+  }
   const deepseekKey = env.DEEPSEEK_API_KEY?.trim();
   const tokensXyzKey = env.TOKENS_XYZ_API_KEY?.trim();
   // Windows/local: EVE's Node evaluator rejects extensionless agent imports

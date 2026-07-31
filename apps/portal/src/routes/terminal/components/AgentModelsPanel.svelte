@@ -2,6 +2,8 @@
   import {
     createLlmProfile,
     deleteLlmProfile,
+    discoverLlmModels,
+    type DiscoveredLlmModel,
     fetchLlmProfiles,
     type LlmCatalogProvider,
     type LlmProfilePublic,
@@ -34,9 +36,15 @@
   let provider = $state<LlmProviderId>("openai");
   let model = $state("gpt-5.4-mini");
   let apiKey = $state("");
+  let discoveredModels = $state<DiscoveredLlmModel[]>([]);
+  let discoveryReady = $state(false);
+  let discovering = $state(false);
 
-  const modelsForProvider = $derived(
+  const fallbackModelsForProvider = $derived(
     catalog.find((entry) => entry.id === provider)?.models ?? [],
+  );
+  const modelsForProvider = $derived(
+    discoveryReady ? discoveredModels : fallbackModelsForProvider,
   );
   const hasServerActive = $derived(profiles.some((profile) => profile.active));
   const selection = $derived($llmProfileSelection.profileId);
@@ -81,12 +89,68 @@
     if (open) await refresh();
   }
 
-  function onProviderChange(): void {
+  function resetDiscovery(): void {
+    discoveryReady = false;
+    discoveredModels = [];
+  }
+
+  function onProviderChange(event: Event): void {
+    provider = (event.currentTarget as HTMLSelectElement)
+      .value as LlmProviderId;
+    error = null;
+    resetDiscovery();
     const first = catalog.find((entry) => entry.id === provider)?.models[0];
     if (first) model = first.id;
   }
 
-  async function onCreate(): Promise<void> {
+  function onApiKeyInput(event: Event): void {
+    apiKey = (event.currentTarget as HTMLInputElement).value;
+    error = null;
+    resetDiscovery();
+  }
+
+  function discoveryErrorMessage(err: unknown): string {
+    const code = err instanceof Error ? err.message : "";
+    if (
+      code === "llm-discovery-provider-400" ||
+      code === "llm-discovery-provider-401"
+    ) {
+      return "That provider rejected this API key.";
+    }
+    if (code === "llm-discovery-provider-403") {
+      return "This key cannot list models. Check its provider permissions.";
+    }
+    if (code === "llm-discovery-provider-429") {
+      return "Model discovery is rate-limited. Try again shortly.";
+    }
+    if (code === "llm-discovery-provider-unavailable") {
+      return "The provider is temporarily unavailable.";
+    }
+    return code || "llm-discovery-failed";
+  }
+
+  async function onDiscover(): Promise<void> {
+    discovering = true;
+    error = null;
+    resetDiscovery();
+    try {
+      const models = await discoverLlmModels({ provider, apiKey });
+      if (models.length === 0) throw new Error("llm-discovery-no-models");
+      discoveredModels = models;
+      discoveryReady = true;
+      if (!models.some((entry) => entry.id === model)) {
+        model = models[0].id;
+      }
+    } catch (err) {
+      error = discoveryErrorMessage(err);
+    } finally {
+      discovering = false;
+    }
+  }
+
+  async function onCreate(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    if (!discoveryReady) return;
     busyId = "__create__";
     error = null;
     try {
@@ -99,6 +163,7 @@
       });
       setLlmProfileId(profile.id);
       apiKey = "";
+      resetDiscovery();
       await refresh();
     } catch (err) {
       error = err instanceof Error ? err.message : "llm-create-failed";
@@ -158,9 +223,9 @@
       <header>
         <h3>Models</h3>
         <p>
-          Bring your own provider API key for this agent. Keys are stored
-          server-side in your private vault and never shown to the model or
-          returned to the browser.
+          Bring your own provider API key for this agent. Keys are encrypted
+          server-side and are never returned to the browser or shown to the
+          model.
         </p>
       </header>
 
@@ -218,7 +283,7 @@
         {/each}
       </div>
 
-      <div class="install">
+      <form class="install" onsubmit={(event) => void onCreate(event)}>
         <h4>Add model profile</h4>
         <label>
           Name
@@ -227,7 +292,7 @@
         <label>
           Provider
           <select
-            bind:value={provider}
+            value={provider}
             onchange={onProviderChange}
           >
             {#each catalog as entry (entry.id)}
@@ -236,17 +301,10 @@
           </select>
         </label>
         <label>
-          Model
-          <select bind:value={model}>
-            {#each modelsForProvider as entry (entry.id)}
-              <option value={entry.id}>{entry.label}</option>
-            {/each}
-          </select>
-        </label>
-        <label>
           API key
           <input
-            bind:value={apiKey}
+            value={apiKey}
+            oninput={onApiKeyInput}
             type="password"
             autocomplete="off"
             spellcheck="false"
@@ -255,14 +313,39 @@
           />
         </label>
         <button
-          class="primary"
+          class="ghost discover"
           type="button"
-          disabled={busyId === "__create__" || !storeConfigured || !apiKey.trim()}
-          onclick={() => void onCreate()}
+          disabled={discovering || apiKey.trim().length < 8}
+          onclick={() => void onDiscover()}
+        >
+          {discovering ? "Discovering…" : "Discover models"}
+        </button>
+        <label>
+          Model
+          <select bind:value={model} disabled={!discoveryReady}>
+            {#each modelsForProvider as entry (entry.id)}
+              <option value={entry.id}>{entry.label}</option>
+            {/each}
+          </select>
+          <span class="hint">
+            {#if discoveryReady}
+              {discoveredModels.length} models available to this key
+            {:else}
+              Discover with your key to load the models you can use
+            {/if}
+          </span>
+        </label>
+        <button
+          class="primary"
+          type="submit"
+          disabled={busyId === "__create__" ||
+            !storeConfigured ||
+            !discoveryReady ||
+            !model}
         >
           Save & use
         </button>
-      </div>
+      </form>
     </section>
   {/if}
 </div>
@@ -366,6 +449,10 @@
     color: var(--danger, #ff5c7a);
   }
 
+  button.discover {
+    width: fit-content;
+  }
+
   .install {
     display: grid;
     gap: 8px;
@@ -376,6 +463,11 @@
     gap: 4px;
     font-size: 12px;
     color: var(--muted, #9aa3b2);
+  }
+
+  .hint {
+    color: var(--muted, #9aa3b2);
+    font-size: 11px;
   }
 
   input,

@@ -1,10 +1,11 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
 import {
-  isAllowedModel,
   isLlmProviderId,
+  isSafeLlmModelId,
   type LlmProviderId,
 } from "./llm-catalog";
 
@@ -15,7 +16,7 @@ export function createUserLanguageModel(input: {
 }): LanguageModel {
   const apiKey = input.apiKey.trim();
   if (!apiKey) throw new Error("llm-api-key-missing");
-  if (!isAllowedModel(input.provider, input.model)) {
+  if (!isSafeLlmModelId(input.model)) {
     throw new Error("llm-model-not-allowed");
   }
 
@@ -26,6 +27,8 @@ export function createUserLanguageModel(input: {
       return createOpenAI({ apiKey })(input.model);
     case "anthropic":
       return createAnthropic({ apiKey })(input.model);
+    case "xai":
+      return createXai({ apiKey })(input.model);
     default: {
       const _exhaustive: never = input.provider;
       throw new Error(`llm-provider-unsupported:${_exhaustive}`);

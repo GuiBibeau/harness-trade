@@ -32,7 +32,16 @@ bun run dev
 
 Open `http://localhost:3000/terminal`. Boots with zero env vars; set
 `PUBLIC_PRIVY_APP_ID` and `PUBLIC_SOLANA_RPC_URL` to enable the wallet and
-live trading. Keys never belong in the browser.
+live trading. Platform secrets never belong in the browser.
+
+User-supplied OpenAI, Anthropic, DeepSeek, and xAI/Grok keys require
+`BLOB_READ_WRITE_TOKEN` plus a server-only, 32-byte base64
+`LLM_PROFILE_ENCRYPTION_KEY`. Generate one with `openssl rand -base64 32`.
+During key rotation, keep old keys temporarily in the comma-separated
+`LLM_PROFILE_ENCRYPTION_KEY_PREVIOUS`; profiles are re-encrypted lazily with
+the current key. Provider keys are encrypted with AES-256-GCM before storage
+and are never returned by the profile API after their one-time browser
+submission.
 
 ## Development
 

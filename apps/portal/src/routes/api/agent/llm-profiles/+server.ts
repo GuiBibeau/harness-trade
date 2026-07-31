@@ -1,26 +1,16 @@
 import { json } from "@sveltejs/kit";
 import { isLlmProviderId, LLM_PROVIDERS } from "$agent/lib/llm-catalog";
+import { assertProviderModelAvailable } from "$agent/lib/llm-model-discovery";
 import {
   isLlmProfileStoreConfigured,
   llmProfileStore,
 } from "$agent/lib/llm-profile-store";
-import { verifyPrivyAccessToken } from "$lib/server/privy";
+import { readJsonRecord, requireAgentUser } from "$lib/server/agent-api";
 import type { RequestHandler } from "./$types";
-
-async function requireUser(request: Request): Promise<string | Response> {
-  const authorization = request.headers.get("authorization") ?? "";
-  const token = authorization.startsWith("Bearer ")
-    ? authorization.slice(7).trim()
-    : "";
-  if (!token) return json({ error: "auth-required" }, { status: 401 });
-  const userId = await verifyPrivyAccessToken(token);
-  if (!userId) return json({ error: "auth-invalid" }, { status: 401 });
-  return userId;
-}
 
 export const GET: RequestHandler = async ({ request, setHeaders }) => {
   setHeaders({ "cache-control": "no-store" });
-  const user = await requireUser(request);
+  const user = await requireAgentUser(request);
   if (user instanceof Response) return user;
 
   const catalog = LLM_PROVIDERS.map((provider) => ({
@@ -44,10 +34,10 @@ export const GET: RequestHandler = async ({ request, setHeaders }) => {
   }
 
   try {
-    const profiles = await llmProfileStore.list(user);
+    const profiles = await llmProfileStore.listPublic(user);
     return json({
       catalog,
-      profiles: llmProfileStore.summarize(profiles),
+      profiles,
       storeConfigured: true,
       platformDefault: {
         provider: "deepseek",
@@ -62,22 +52,14 @@ export const GET: RequestHandler = async ({ request, setHeaders }) => {
 
 export const POST: RequestHandler = async ({ request, setHeaders }) => {
   setHeaders({ "cache-control": "no-store" });
-  const user = await requireUser(request);
+  const user = await requireAgentUser(request);
   if (user instanceof Response) return user;
   if (!isLlmProfileStoreConfigured()) {
     return json({ error: "llm-store-unconfigured" }, { status: 503 });
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "invalid-body" }, { status: 400 });
-  }
-  if (!body || typeof body !== "object") {
-    return json({ error: "invalid-body" }, { status: 400 });
-  }
-  const record = body as Record<string, unknown>;
+  const record = await readJsonRecord(request);
+  if (record instanceof Response) return record;
   const name = typeof record.name === "string" ? record.name : "";
   const provider =
     typeof record.provider === "string" && isLlmProviderId(record.provider)
@@ -89,6 +71,7 @@ export const POST: RequestHandler = async ({ request, setHeaders }) => {
     return json({ error: "llm-provider-invalid" }, { status: 400 });
 
   try {
+    await assertProviderModelAvailable({ provider, apiKey, model });
     const profile = await llmProfileStore.create(user, {
       name,
       provider,
