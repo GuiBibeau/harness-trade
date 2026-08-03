@@ -8,6 +8,8 @@ export type LiveAccessRecord = {
   enabled: boolean;
   updatedAt: string;
   version: number;
+  /** Agent wallet address the user acknowledged when enabling live. */
+  ackedAgentWallet?: string;
 };
 
 function pathname(ownerId: string): string {
@@ -36,6 +38,7 @@ export async function isLiveAgentEnabled(ownerId: string): Promise<boolean> {
 export async function setLiveAgentEnabled(
   ownerId: string,
   enabled: boolean,
+  options: { ackedAgentWallet?: string } = {},
 ): Promise<LiveAccessRecord> {
   if (!ownerId.trim()) throw new Error("live-access-owner-invalid");
   if (!isLiveAccessStoreConfigured()) {
@@ -48,7 +51,15 @@ export async function setLiveAgentEnabled(
     enabled,
     updatedAt: now,
     version: (existing?.value.version ?? 0) + 1,
+    ...(enabled && options.ackedAgentWallet
+      ? { ackedAgentWallet: options.ackedAgentWallet }
+      : existing?.value.ackedAgentWallet
+        ? { ackedAgentWallet: existing.value.ackedAgentWallet }
+        : {}),
   };
+  if (!enabled) {
+    delete record.ackedAgentWallet;
+  }
   await writePrivateJson(pathname(ownerId), record);
   return record;
 }

@@ -69,9 +69,14 @@ Execution, even when navigation and trading appear in the same user request.
 - Private keys and seed phrases are never exposed to the model, browser,
   EVE durable state, or logs.
 - Live agent execution additionally requires an explicit server-side live
-  access enablement record (`agent/lib/live-access-store.ts`). Client
-  `x-harness-account-mode: live` alone is not sufficient; without the
-  record the session is clamped to paper.
+  access enablement record (`agent/lib/live-access-store.ts`). Enabling
+  live requires acknowledging the exact derived agent wallet address
+  (`ackAgentWallet`). Client `x-harness-account-mode: live` alone is not
+  sufficient; without the record the session is clamped to paper.
+- The agent wallet address is surfaced to the owner, and SOL may be
+  evacuated only to the Privy-linked owner Solana wallet via
+  `/api/agent/custody-wallet` (destination is server-resolved; never
+  accepted from the client body).
 - Signing capability is not a Mandate; both signer capability and policy
   authority must be valid.
 - The server constructs transactions from canonical domain operations and

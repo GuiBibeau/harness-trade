@@ -177,7 +177,14 @@
     unregisterAgentHost,
     type AgentActionResult,
   } from "$lib/agent/host";
-  import { setLiveAgentAccess } from "$lib/agent/live-access-api";
+  import {
+    enableLiveAgentAccess,
+    setLiveAgentAccess,
+  } from "$lib/agent/live-access-api";
+  import {
+    fetchCustodyWallet,
+    withdrawCustodySol,
+  } from "$lib/agent/custody-wallet-api";
   import { agentState } from "$lib/agent/state";
   import { fetchMintSafety, fetchSolanaLamports, solanaRpcUrl } from "$lib/solana-rpc";
   import { swrRead, swrWrite } from "$lib/swr";
@@ -540,6 +547,12 @@
   let solBalanceValue: number | null = null;
   let walletCopied = false;
   let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
+  let agentCustodyAddress: string | null = null;
+  let agentCustodySolText = "-- SOL";
+  let agentCustodySpendableLamports = 0;
+  let agentCustodyCopied = false;
+  let agentCustodyBusy = false;
+  let agentCustodyCopyTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Phoenix onboarding (beta whitelist + referral attribution).
   let phoenixWhitelisted: boolean | null = null;
@@ -1063,6 +1076,12 @@
     void screenWallet(normalizedWalletAddress);
   }
   $: phoenixAuthority = $privyAuth.authenticated ? normalizedWalletAddress : "";
+  $: if (browser && $privyAuth.authenticated) void refreshAgentCustodyWallet();
+  $: if (browser && !$privyAuth.authenticated) {
+    agentCustodyAddress = null;
+    agentCustodySolText = "-- SOL";
+    agentCustodySpendableLamports = 0;
+  }
   // Lazy web3 boundary (plan 8.1): $lib/phoenix-trade statically pulls
   // @solana/web3.js + @ellipsis-labs/rise (~1.1 MB pre-minify) — the dynamic
   // import keeps that graph out of the entry chunk. The module registry
@@ -3393,11 +3412,27 @@
     }
     const nextPaper = !paperMode;
     if (!nextPaper) {
-      // Live agent execution requires an explicit server-side enablement.
-      // Terminal LIVE mode still works for manual tickets; the agent stays
+      // Live agent execution requires an explicit server-side enablement
+      // that acknowledges the separate server-custody agent wallet address.
+      // Terminal LIVE still works for manual Privy tickets; the agent stays
       // on paper until this ack succeeds.
       try {
-        await setLiveAgentAccess(true);
+        const access = await enableLiveAgentAccess();
+        const agentAddr = access.agentWalletAddress;
+        const ownerAddr =
+          access.ownerSolanaWallet ?? $privyAuth.walletAddress ?? null;
+        alertsStore.pushToast({
+          ts: Date.now(),
+          title: "Live agent wallet armed",
+          body: agentAddr
+            ? `Agent trades use server-custody ${shortAddress(agentAddr)}${
+                ownerAddr
+                  ? ` — distinct from your Privy wallet ${shortAddress(ownerAddr)}`
+                  : ""
+              }. Fund the agent wallet, or withdraw SOL back to Privy from the account menu.`
+            : "Live agent access enabled.",
+        });
+        void refreshAgentCustodyWallet();
       } catch (error) {
         alertsStore.pushToast({
           ts: Date.now(),
@@ -4518,6 +4553,60 @@
       }, 1600);
     } catch {
       walletBalanceError = "Clipboard unavailable in this browser.";
+    }
+  }
+
+  async function refreshAgentCustodyWallet(): Promise<void> {
+    if (!$privyAuth.authenticated) {
+      agentCustodyAddress = null;
+      agentCustodySolText = "-- SOL";
+      agentCustodySpendableLamports = 0;
+      return;
+    }
+    try {
+      const snapshot = await fetchCustodyWallet();
+      agentCustodyAddress = snapshot.agentWalletAddress;
+      agentCustodySolText = `${snapshot.solBalance.toFixed(4)} SOL`;
+      agentCustodySpendableLamports = snapshot.spendableLamports;
+    } catch {
+      // Master secret / RPC may be unavailable in local/dev — keep last known.
+    }
+  }
+
+  async function copyAgentCustodyAddress(): Promise<void> {
+    if (!agentCustodyAddress) return;
+    try {
+      await navigator.clipboard.writeText(agentCustodyAddress);
+      agentCustodyCopied = true;
+      if (agentCustodyCopyTimer) clearTimeout(agentCustodyCopyTimer);
+      agentCustodyCopyTimer = setTimeout(() => {
+        agentCustodyCopied = false;
+      }, 1600);
+    } catch {
+      walletBalanceError = "Clipboard unavailable in this browser.";
+    }
+  }
+
+  async function withdrawAgentCustodySol(): Promise<void> {
+    if (agentCustodyBusy || agentCustodySpendableLamports <= 0) return;
+    agentCustodyBusy = true;
+    try {
+      const result = await withdrawCustodySol("max");
+      alertsStore.pushToast({
+        ts: Date.now(),
+        title: "Agent SOL withdrawn",
+        body: `Sent ${(result.lamports / 1e9).toFixed(4)} SOL to your Privy wallet.`,
+      });
+      await refreshAgentCustodyWallet();
+      void refreshWalletBalance();
+    } catch (error) {
+      alertsStore.pushToast({
+        ts: Date.now(),
+        title: "Agent withdraw failed",
+        body: error instanceof Error ? error.message : "withdraw-failed",
+      });
+    } finally {
+      agentCustodyBusy = false;
     }
   }
 
@@ -6341,8 +6430,18 @@
     onrefreshbalances={() => {
       void refreshWalletBalance();
       void refreshPhoenixTrader();
+      void refreshAgentCustodyWallet();
     }}
     ontogglepaper={togglePaperMode}
+    agentCustody={{
+      address: agentCustodyAddress,
+      solText: agentCustodySolText,
+      spendableLamports: agentCustodySpendableLamports,
+      copied: agentCustodyCopied,
+      busy: agentCustodyBusy,
+    }}
+    oncopyagentcustody={copyAgentCustodyAddress}
+    onwithdrawagentcustody={withdrawAgentCustodySol}
   />
 
   {#if showOpenBetaBanner}

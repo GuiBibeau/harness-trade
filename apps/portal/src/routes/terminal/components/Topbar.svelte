@@ -38,6 +38,9 @@
     oncopyaddress,
     onrefreshbalances,
     ontogglepaper,
+    agentCustody = null,
+    oncopyagentcustody = undefined,
+    onwithdrawagentcustody = undefined,
   }: {
     wallet: {
       balanceText: string;
@@ -68,6 +71,15 @@
     oncopyaddress: () => void | Promise<void>;
     onrefreshbalances: () => void;
     ontogglepaper: () => void;
+    agentCustody?: {
+      address: string | null;
+      solText: string;
+      spendableLamports: number;
+      copied: boolean;
+      busy: boolean;
+    } | null;
+    oncopyagentcustody?: () => void | Promise<void>;
+    onwithdrawagentcustody?: () => void | Promise<void>;
   } = $props();
 
   // Aliases keep the moved markup verbatim against the page's names.
@@ -229,6 +241,38 @@
                 <span class="copy-hint" class:done={walletCopied}>{walletCopied ? "Copied" : "Copy"}</span>
               {/if}
             </button>
+
+            {#if agentCustody?.address}
+              <button
+                class="account-row copyable"
+                type="button"
+                onclick={() => void oncopyagentcustody?.()}
+              >
+                <span class="account-row-label">Agent wallet</span>
+                <span class="account-row-value mono">
+                  {shortAddress(agentCustody.address)}
+                  <small class="funds-split">{agentCustody.solText} · server custody</small>
+                </span>
+                <span class="copy-hint" class:done={agentCustody.copied}
+                  >{agentCustody.copied ? "Copied" : "Copy"}</span
+                >
+              </button>
+              <button
+                class="account-action"
+                type="button"
+                disabled={agentCustody.busy || agentCustody.spendableLamports <= 0}
+                onclick={() => void onwithdrawagentcustody?.()}
+              >
+                {agentCustody.busy
+                  ? "Withdrawing…"
+                  : agentCustody.spendableLamports <= 0
+                    ? "No agent SOL to withdraw"
+                    : "Withdraw agent SOL to Privy"}
+              </button>
+              <p class="account-dropdown-note warn">
+                Agent live trades use this server-custody wallet — not your Privy wallet above.
+              </p>
+            {/if}
 
             {#if walletScreen.checked}
               <div class="account-row">
