@@ -53,7 +53,6 @@ type QueuedAction = {
 type ChatRequestBody = {
   history: ChatMessage[];
   context: unknown;
-  edgeToken?: string;
   modelChoice: ChatModelChoice;
   /** When set, enable agent action tools + agent system prompt. */
   agentMode?: AgentMode;
@@ -110,16 +109,9 @@ export const POST: RequestHandler = async ({ request, fetch, setHeaders }) => {
   const body = await readChatBody(request);
   if (!body) return json({ error: "bad-request" }, { status: 400 });
 
-  // Edge credentials must be the verified session token (or another Privy
-  // token for the same sub). Never forward a mismatched body edgeToken.
-  let edgeToken = token;
-  if (body.edgeToken && body.edgeToken !== token) {
-    const edgeUser = await verifyPrivyAccessToken(body.edgeToken);
-    if (!edgeUser || edgeUser !== userId) {
-      return json({ error: "edge-token-mismatch" }, { status: 403 });
-    }
-    edgeToken = body.edgeToken;
-  }
+  // Edge tool calls use the verified Authorization bearer only — never a
+  // second credential from the request body.
+  const edgeToken = token;
 
   const history = capHistory(body.history);
   const contextJson = JSON.stringify(body.context);
@@ -249,7 +241,11 @@ async function readChatBody(request: Request): Promise<ChatRequestBody | null> {
   if (!Array.isArray(body.history)) return null;
   const history = parseHistory(body.history);
   if (!history) return null;
-  if ("edgeToken" in body && typeof body.edgeToken !== "string") return null;
+  // Ignore legacy body.edgeToken if present — Authorization is the only
+  // credential. Reject only when the field exists and is the wrong type.
+  if ("edgeToken" in body && body.edgeToken !== undefined) {
+    if (typeof body.edgeToken !== "string") return null;
+  }
   const modelChoice = parseModelChoice(body.modelChoice);
   if (!modelChoice) return null;
   let agentMode: AgentMode | undefined;
@@ -267,7 +263,6 @@ async function readChatBody(request: Request): Promise<ChatRequestBody | null> {
   return {
     history,
     context: body.context,
-    edgeToken: typeof body.edgeToken === "string" ? body.edgeToken : undefined,
     modelChoice,
     agentMode,
     paused: body.paused === true,
