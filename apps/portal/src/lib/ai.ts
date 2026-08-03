@@ -7,8 +7,10 @@
 // Calls go to the same-origin /deepseek proxy (see vite.config.ts), which
 // injects the API key server-side — the key is never in the client bundle.
 
+import { DEEPSEEK_V4_FLASH_MODEL } from "../../agent/lib/llm-catalog";
+
 const AI_ENDPOINT = "/deepseek/chat/completions";
-const MODEL = "deepseek-chat";
+const MODEL = DEEPSEEK_V4_FLASH_MODEL.id;
 
 export type AiPhase = "idle" | "loading" | "ready" | "error";
 

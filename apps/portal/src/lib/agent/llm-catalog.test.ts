@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   apiKeyLast4,
+  DEEPSEEK_V4_FLASH_MODEL,
   isLlmProviderId,
   isSafeLlmModelId,
   LLM_PROVIDERS,
+  PLATFORM_DEFAULT_LLM,
   providerModels,
 } from "../../../agent/lib/llm-catalog";
 
@@ -26,6 +28,23 @@ describe("llm-catalog", () => {
     expect(providerModels("xai").some((model) => model.id === "grok-4.5")).toBe(
       true,
     );
+  });
+
+  test("uses DeepSeek V4 Flash for the platform default", () => {
+    expect(DEEPSEEK_V4_FLASH_MODEL).toEqual({
+      id: "deepseek-v4-flash",
+      gatewayId: "deepseek/deepseek-v4-flash",
+      label: "DeepSeek V4 Flash",
+    });
+    expect(PLATFORM_DEFAULT_LLM).toEqual({
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      label: "Harness default (DeepSeek V4 Flash)",
+    });
+    expect(providerModels(PLATFORM_DEFAULT_LLM.provider)).toContainEqual({
+      id: PLATFORM_DEFAULT_LLM.model,
+      label: DEEPSEEK_V4_FLASH_MODEL.label,
+    });
   });
 
   test("accepts provider-discovered model ids but rejects path/control input", () => {
