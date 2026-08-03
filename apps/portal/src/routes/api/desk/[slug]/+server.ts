@@ -4,6 +4,7 @@
 // input facts, falling back to null (the page then shows the pulse instead).
 
 import { json } from "@sveltejs/kit";
+import { DEEPSEEK_V4_FLASH_MODEL } from "$agent/lib/llm-catalog";
 import { env } from "$env/dynamic/private";
 import { getPerpSymbols } from "$lib/server/phoenix-markets";
 import {
@@ -82,7 +83,7 @@ async function generateRead(asset: Asset): Promise<string | null> {
       authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "deepseek-chat",
+      model: DEEPSEEK_V4_FLASH_MODEL.id,
       temperature: 0.5,
       max_tokens: 220,
       messages: [

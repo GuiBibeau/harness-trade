@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { PLATFORM_DEFAULT_LLM } from "$agent/lib/llm-catalog";
   import {
     createLlmProfile,
     deleteLlmProfile,
@@ -28,7 +29,7 @@
   let catalog = $state<LlmCatalogProvider[]>([]);
   let profiles = $state<LlmProfilePublic[]>([]);
   let storeConfigured = $state(true);
-  let platformLabel = $state("Harness default (DeepSeek V4 Pro)");
+  let platformLabel = $state<string>(PLATFORM_DEFAULT_LLM.label);
   let busyId = $state<string | null>(null);
 
   let name = $state("My model");

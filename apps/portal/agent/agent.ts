@@ -1,6 +1,7 @@
 import { deepseek } from "@ai-sdk/deepseek";
 import { defineAgent, defineDynamic } from "eve";
 import type { SessionContext } from "eve/context";
+import { PLATFORM_DEFAULT_LLM } from "./lib/llm-catalog";
 import { createUserLanguageModel } from "./lib/llm-model";
 import { llmProfileStore } from "./lib/llm-profile-store";
 
@@ -50,7 +51,7 @@ export default defineAgent({
     "A persistent, authenticated trading copilot for the Harness terminal.",
   model: defineDynamic({
     // Platform default when the user has no BYOK profile.
-    fallback: deepseek("deepseek-v4-pro"),
+    fallback: deepseek(PLATFORM_DEFAULT_LLM.model),
     events: {
       // Live LanguageModel (with the caller's API key) is only valid on
       // step.started — session/turn scopes must be serializable model ids.

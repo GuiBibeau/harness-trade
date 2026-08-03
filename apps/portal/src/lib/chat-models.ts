@@ -1,10 +1,12 @@
+import { DEEPSEEK_V4_FLASH_MODEL } from "../../agent/lib/llm-catalog";
+
 export type ChatTier = "free" | "pro";
 export type TaskClass = "chat" | "analysis";
 export type ChatModelChoice = "auto" | "free" | "pro";
 
 export type ResolvedModel = {
   tier: ChatTier;
-  /** AI Gateway "provider/model" string for pro; sentinel "deepseek-chat"
+  /** AI Gateway "provider/model" string for pro; direct DeepSeek model id
    * for free (raw DeepSeek path the endpoint already owns). */
   model: string;
   /** true when a frontier/pro model was actually selected — drives the
@@ -12,7 +14,8 @@ export type ResolvedModel = {
   proLabel: boolean;
 };
 
-export const FREE_MODEL = "deepseek-chat";
+export const FREE_MODEL = DEEPSEEK_V4_FLASH_MODEL.id;
+export const FREE_GATEWAY_MODEL = DEEPSEEK_V4_FLASH_MODEL.gatewayId;
 export const PRO_MODEL = "anthropic/claude-opus-4.8";
 export const PRO_LABEL = "Pro (open beta)";
 

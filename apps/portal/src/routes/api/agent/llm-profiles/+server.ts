@@ -1,5 +1,9 @@
 import { json } from "@sveltejs/kit";
-import { isLlmProviderId, LLM_PROVIDERS } from "$agent/lib/llm-catalog";
+import {
+  isLlmProviderId,
+  LLM_PROVIDERS,
+  PLATFORM_DEFAULT_LLM,
+} from "$agent/lib/llm-catalog";
 import { assertProviderModelAvailable } from "$agent/lib/llm-model-discovery";
 import {
   isLlmProfileStoreConfigured,
@@ -25,11 +29,7 @@ export const GET: RequestHandler = async ({ request, setHeaders }) => {
       catalog,
       profiles: [],
       storeConfigured: false,
-      platformDefault: {
-        provider: "deepseek",
-        model: "deepseek-v4-pro",
-        label: "Harness default (DeepSeek V4 Pro)",
-      },
+      platformDefault: PLATFORM_DEFAULT_LLM,
     });
   }
 
@@ -39,11 +39,7 @@ export const GET: RequestHandler = async ({ request, setHeaders }) => {
       catalog,
       profiles,
       storeConfigured: true,
-      platformDefault: {
-        provider: "deepseek",
-        model: "deepseek-v4-pro",
-        label: "Harness default (DeepSeek V4 Pro)",
-      },
+      platformDefault: PLATFORM_DEFAULT_LLM,
     });
   } catch {
     return json({ error: "llm-store-unavailable" }, { status: 503 });

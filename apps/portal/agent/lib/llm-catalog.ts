@@ -15,6 +15,18 @@ export type LlmProviderOption = {
   keyHint: string;
 };
 
+export const DEEPSEEK_V4_FLASH_MODEL = {
+  id: "deepseek-v4-flash",
+  gatewayId: "deepseek/deepseek-v4-flash",
+  label: "DeepSeek V4 Flash",
+} as const;
+
+export const PLATFORM_DEFAULT_LLM = {
+  provider: "deepseek",
+  model: DEEPSEEK_V4_FLASH_MODEL.id,
+  label: "Harness default (DeepSeek V4 Flash)",
+} as const;
+
 export const LLM_PROVIDERS: readonly LlmProviderOption[] = [
   {
     id: "deepseek",
@@ -22,7 +34,10 @@ export const LLM_PROVIDERS: readonly LlmProviderOption[] = [
     keyHint: "DEEPSEEK_API_KEY from platform.deepseek.com",
     models: [
       { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+      {
+        id: DEEPSEEK_V4_FLASH_MODEL.id,
+        label: DEEPSEEK_V4_FLASH_MODEL.label,
+      },
     ],
   },
   {

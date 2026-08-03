@@ -19,6 +19,7 @@ import {
 } from "$lib/chat-core";
 import {
   type ChatModelChoice,
+  FREE_GATEWAY_MODEL,
   FREE_MODEL,
   type ResolvedModel,
   resolveModel,
@@ -539,7 +540,7 @@ function freeModelConfigs(): ChatModelConfig[] {
     configs.push({
       url: AI_GATEWAY_URL,
       apiKey: gatewayKey,
-      model: "deepseek/deepseek-chat",
+      model: FREE_GATEWAY_MODEL,
     });
   }
   return configs;
