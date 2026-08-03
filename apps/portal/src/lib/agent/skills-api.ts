@@ -1,4 +1,4 @@
-import { getPrivyAccessToken } from "$lib/privy-auth";
+import { fetchWithPrivyAuth } from "$lib/privy-fetch";
 
 export type SkillListItem = {
   name: string;
@@ -18,18 +18,11 @@ export type SkillsListResponse = {
   storeConfigured: boolean;
 };
 
-async function authHeaders(): Promise<HeadersInit> {
-  const token = await getPrivyAccessToken();
-  if (!token) throw new Error("auth-required");
-  return {
-    authorization: `Bearer ${token}`,
-    "content-type": "application/json",
-  };
-}
+const JSON_HEADERS = { "content-type": "application/json" };
 
 export async function fetchAgentSkills(): Promise<SkillsListResponse> {
-  const response = await fetch("/api/agent/skills", {
-    headers: await authHeaders(),
+  const response = await fetchWithPrivyAuth("/api/agent/skills", {
+    headers: JSON_HEADERS,
   });
   if (!response.ok) {
     throw new Error(`skills-list-${response.status}`);
@@ -43,9 +36,9 @@ export async function installAgentSkill(input: {
   files?: Record<string, string>;
   enabled?: boolean;
 }): Promise<SkillListItem> {
-  const response = await fetch("/api/agent/skills", {
+  const response = await fetchWithPrivyAuth("/api/agent/skills", {
     method: "POST",
-    headers: await authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify(input),
   });
   const body = (await response.json()) as {
@@ -62,11 +55,11 @@ export async function setAgentSkillEnabled(
   name: string,
   enabled: boolean,
 ): Promise<SkillListItem> {
-  const response = await fetch(
+  const response = await fetchWithPrivyAuth(
     `/api/agent/skills/${encodeURIComponent(name)}`,
     {
       method: "PATCH",
-      headers: await authHeaders(),
+      headers: JSON_HEADERS,
       body: JSON.stringify({ enabled }),
     },
   );
@@ -81,11 +74,11 @@ export async function setAgentSkillEnabled(
 }
 
 export async function deleteAgentSkill(name: string): Promise<void> {
-  const response = await fetch(
+  const response = await fetchWithPrivyAuth(
     `/api/agent/skills/${encodeURIComponent(name)}`,
     {
       method: "DELETE",
-      headers: await authHeaders(),
+      headers: JSON_HEADERS,
     },
   );
   if (!response.ok) {

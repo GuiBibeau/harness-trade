@@ -1,6 +1,6 @@
 import type { LlmProviderId } from "$agent/lib/llm-catalog";
 import type { DiscoveredLlmModel } from "$agent/lib/llm-model-discovery";
-import { getPrivyAccessToken } from "$lib/privy-auth";
+import { fetchWithPrivyAuth } from "$lib/privy-fetch";
 
 export type { DiscoveredLlmModel };
 export type { LlmProviderId };
@@ -34,18 +34,11 @@ export type LlmProfilesResponse = {
   };
 };
 
-async function authHeaders(): Promise<HeadersInit> {
-  const token = await getPrivyAccessToken();
-  if (!token) throw new Error("auth-required");
-  return {
-    authorization: `Bearer ${token}`,
-    "content-type": "application/json",
-  };
-}
+const JSON_HEADERS = { "content-type": "application/json" };
 
 export async function fetchLlmProfiles(): Promise<LlmProfilesResponse> {
-  const response = await fetch("/api/agent/llm-profiles", {
-    headers: await authHeaders(),
+  const response = await fetchWithPrivyAuth("/api/agent/llm-profiles", {
+    headers: JSON_HEADERS,
   });
   if (!response.ok) throw new Error(`llm-profiles-${response.status}`);
   return (await response.json()) as LlmProfilesResponse;
@@ -58,9 +51,9 @@ export async function createLlmProfile(input: {
   apiKey: string;
   active?: boolean;
 }): Promise<LlmProfilePublic> {
-  const response = await fetch("/api/agent/llm-profiles", {
+  const response = await fetchWithPrivyAuth("/api/agent/llm-profiles", {
     method: "POST",
-    headers: await authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify(input),
   });
   const body = (await response.json()) as {
@@ -77,11 +70,14 @@ export async function discoverLlmModels(input: {
   provider: LlmProviderId;
   apiKey: string;
 }): Promise<DiscoveredLlmModel[]> {
-  const response = await fetch("/api/agent/llm-profiles/discover", {
-    method: "POST",
-    headers: await authHeaders(),
-    body: JSON.stringify(input),
-  });
+  const response = await fetchWithPrivyAuth(
+    "/api/agent/llm-profiles/discover",
+    {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(input),
+    },
+  );
   const body = (await response.json()) as {
     models?: DiscoveredLlmModel[];
     error?: string;
@@ -102,11 +98,11 @@ export async function updateLlmProfile(
     active?: boolean;
   },
 ): Promise<LlmProfilePublic> {
-  const response = await fetch(
+  const response = await fetchWithPrivyAuth(
     `/api/agent/llm-profiles/${encodeURIComponent(id)}`,
     {
       method: "PATCH",
-      headers: await authHeaders(),
+      headers: JSON_HEADERS,
       body: JSON.stringify(patch),
     },
   );
@@ -121,11 +117,11 @@ export async function updateLlmProfile(
 }
 
 export async function deleteLlmProfile(id: string): Promise<void> {
-  const response = await fetch(
+  const response = await fetchWithPrivyAuth(
     `/api/agent/llm-profiles/${encodeURIComponent(id)}`,
     {
       method: "DELETE",
-      headers: await authHeaders(),
+      headers: JSON_HEADERS,
     },
   );
   if (!response.ok) {

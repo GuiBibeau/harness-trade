@@ -9,6 +9,7 @@ import { getAgentPolicy, setProposals } from "./agent/state";
 import type { ChatMessage } from "./chat-core";
 import type { ChatModelChoice } from "./chat-models";
 import { getPrivyAccessToken } from "./privy-auth";
+import { fetchWithPrivyAuth } from "./privy-fetch";
 
 const CHAT_OPEN_KEY = "harness.chat.v1";
 const CHAT_ENDPOINT = "/api/chat";
@@ -86,8 +87,9 @@ export type SendChatOptions = {
   accountMode?: "live" | "paper";
 };
 
-/** POST /api/chat. Attaches Authorization from getPrivyAccessToken() and the
- * edge token when one resolves. See module header for the state machine. */
+/** POST /api/chat. Attaches Authorization from Privy (refresh-once on 401).
+ * Edge tool calls on the server use that same verified Bearer — no dual
+ * body edgeToken credential. */
 export async function sendChatMessage(
   text: string,
   context: Record<string, unknown>,
@@ -99,9 +101,8 @@ export async function sendChatMessage(
   pushMessage({ role: "user", content: trimmed });
   setPhase("waiting");
 
-  let token: string | null = null;
   try {
-    token = await getPrivyAccessToken();
+    await getPrivyAccessToken();
   } catch {
     // No usable credential (Privy unconfigured/unavailable) — same lane as 401.
     setPhase("auth");
@@ -112,12 +113,11 @@ export async function sendChatMessage(
   try {
     const state = get(chatState);
     const policy = getAgentPolicy();
-    response = await fetch(CHAT_ENDPOINT, {
+    response = await fetchWithPrivyAuth(CHAT_ENDPOINT, {
       method: "POST",
-      headers: buildHeaders(token),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(
         buildBody(
-          token,
           state.messages,
           context,
           state.modelChoice,
@@ -240,25 +240,14 @@ function setError(message: string): void {
   chatState.update((state) => ({ ...state, phase: "error", error: message }));
 }
 
-function buildHeaders(token: string | null): Record<string, string> {
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-  };
-  if (token) {
-    headers.authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
-
 function buildBody(
-  token: string | null,
   history: ChatUiMessage[],
   context: Record<string, unknown>,
   modelChoice: ChatModelChoice,
   agentMode: string,
   paused: boolean,
 ): Record<string, unknown> {
-  const body: Record<string, unknown> = {
+  return {
     history: history.map((message) => ({
       role: message.role,
       content: message.content,
@@ -268,10 +257,6 @@ function buildBody(
     agentMode,
     paused,
   };
-  if (token) {
-    body.edgeToken = token;
-  }
-  return body;
 }
 
 function networkErrorMessage(error: unknown): string {

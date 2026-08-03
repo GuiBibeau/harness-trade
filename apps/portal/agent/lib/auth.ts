@@ -54,6 +54,30 @@ export function requireAgentPrincipal(ctx: EveContext): AgentPrincipal {
   };
 }
 
+export function decideTransactionApproval(
+  principal: AgentPrincipal,
+):
+  | { type: "denied"; reason: string }
+  | { type: "approved"; reason: string }
+  | "user-approval" {
+  if (principal.paused) {
+    return { type: "denied", reason: "Money-PAUSE is engaged." };
+  }
+  if (principal.agentMode === "observe") {
+    return { type: "denied", reason: "Observe mode is read-only." };
+  }
+  if (principal.agentMode === "ask") return "user-approval";
+  if (principal.accountMode === "paper") {
+    return {
+      type: "approved",
+      reason: "Auto mode permits paper execution.",
+    };
+  }
+  // Live money always requires an explicit approval — Auto never silently
+  // signs/broadcasts against the server-custody wallet.
+  return "user-approval";
+}
+
 export function transactionApproval(
   ctx: ApprovalContext<Record<string, unknown>>,
 ) {
@@ -63,31 +87,5 @@ export function transactionApproval(
   } catch {
     return { type: "denied" as const, reason: "Session owner mismatch." };
   }
-  if (principal.paused) {
-    return { type: "denied" as const, reason: "Money-PAUSE is engaged." };
-  }
-  if (principal.agentMode === "observe") {
-    return { type: "denied" as const, reason: "Observe mode is read-only." };
-  }
-  if (principal.agentMode === "ask") return "user-approval" as const;
-  if (principal.accountMode === "paper") {
-    return {
-      type: "approved" as const,
-      reason: "Auto mode permits paper execution.",
-    };
-  }
-
-  const input = ctx.toolInput ?? {};
-  const notional = Number(input.sizeUsd ?? input.amountUsd ?? 0);
-  const leverage = Number(input.leverage ?? 0);
-  if (
-    (Number.isFinite(notional) && notional > 5_000) ||
-    (Number.isFinite(leverage) && leverage > 20)
-  ) {
-    return "user-approval" as const;
-  }
-  return {
-    type: "approved" as const,
-    reason: "Auto mode within the server risk envelope.",
-  };
+  return decideTransactionApproval(principal);
 }

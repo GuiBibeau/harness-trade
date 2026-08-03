@@ -85,7 +85,10 @@ Execution, even when navigation and trading appear in the same user request.
 
 - Observe denies all Executions.
 - Ask parks every Execution for explicit user approval.
-- Auto may allow Executions inside server policy limits.
+- Auto may allow **paper** Executions without a prompt. **Live** Executions
+  always require explicit user approval — Auto never silently signs against
+  the server-custody wallet (`decideTransactionApproval` in
+  `agent/lib/auth.ts`).
 - PAUSE denies every Execution, including Routine-created Tasks.
 - Approvals are bound to the exact Plan and Execution digests and expire.
 - A changed amount, side, asset, leverage, price, trigger, protection, venue,
