@@ -185,6 +185,7 @@
     fetchCustodyWallet,
     withdrawCustodySol,
   } from "$lib/agent/custody-wallet-api";
+  import { nextCustodyRefresh } from "$lib/agent/custody-refresh";
   import { agentState } from "$lib/agent/state";
   import { fetchMintSafety, fetchSolanaLamports, solanaRpcUrl } from "$lib/solana-rpc";
   import { swrRead, swrWrite } from "$lib/swr";
@@ -553,6 +554,7 @@
   let agentCustodyCopied = false;
   let agentCustodyBusy = false;
   let agentCustodyCopyTimer: ReturnType<typeof setTimeout> | null = null;
+  let agentCustodyOwnerId: string | null = null;
 
   // Phoenix onboarding (beta whitelist + referral attribution).
   let phoenixWhitelisted: boolean | null = null;
@@ -1076,11 +1078,20 @@
     void screenWallet(normalizedWalletAddress);
   }
   $: phoenixAuthority = $privyAuth.authenticated ? normalizedWalletAddress : "";
-  $: if (browser && $privyAuth.authenticated) void refreshAgentCustodyWallet();
-  $: if (browser && !$privyAuth.authenticated) {
-    agentCustodyAddress = null;
-    agentCustodySolText = "-- SOL";
-    agentCustodySpendableLamports = 0;
+  $: if (browser) {
+    const transition = nextCustodyRefresh(agentCustodyOwnerId, {
+      authenticated: $privyAuth.authenticated,
+      userId: $privyAuth.userId,
+    });
+    if (transition.action !== "none") {
+      agentCustodyOwnerId = transition.ownerId;
+      if (transition.action === "refresh") void refreshAgentCustodyWallet();
+      else {
+        agentCustodyAddress = null;
+        agentCustodySolText = "-- SOL";
+        agentCustodySpendableLamports = 0;
+      }
+    }
   }
   // Lazy web3 boundary (plan 8.1): $lib/phoenix-trade statically pulls
   // @solana/web3.js + @ellipsis-labs/rise (~1.1 MB pre-minify) — the dynamic
