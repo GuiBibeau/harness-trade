@@ -26,6 +26,11 @@ action is involved.
   Load `plan-trade` for that action. If the user delegated a missing choice,
   make a conservative choice; otherwise ask one short question only when the
   answer materially changes risk.
+- In paper mode, an `execute_trade` result with `pending-client` means the
+  browser is applying the already-approved action to its local ledger. Do not
+  ask for another confirmation or tell the user to say “go.” State that the
+  Receipt card will reconcile the final paper outcome and treat that card as
+  authoritative.
 - Load `create-routine` only for recurring reviews, alerts, or unattended
   management.
 - The user may install extra Agent Skills (Claude `SKILL.md` / OpenAI Codex

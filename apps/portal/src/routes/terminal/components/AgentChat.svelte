@@ -22,6 +22,7 @@
   } from "$lib/agent/state";
   import {
     projectHarnessTool,
+    settleIdleActivity,
     type WorkstreamCard,
   } from "$lib/agent/workstream";
   import { getPrivyAccessToken, privyAuth } from "$lib/privy-auth";
@@ -370,7 +371,7 @@
       rawOutput !== null &&
       rawOutput.paperAction !== undefined &&
       rawOutput.paperAction !== null;
-    return projectHarnessTool({
+    const card = projectHarnessTool({
       toolName: part.toolName,
       state: part.state,
       input: part.input,
@@ -401,6 +402,10 @@
       errorText: part.errorText,
       approvalPending: part.approvalPending,
     });
+    return settleIdleActivity(
+      card,
+      conversation.status === "ready" && !part.approvalPending,
+    );
   }
 
   function messageToolParts(
