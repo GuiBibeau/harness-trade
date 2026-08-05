@@ -1,7 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { projectHarnessTool } from "./workstream";
+import { projectHarnessTool, settleIdleActivity } from "./workstream";
 
 describe("projectHarnessTool", () => {
+  test("settles generic activity that EVE leaves open after the session parks", () => {
+    const card = projectHarnessTool({
+      toolName: "load_skill",
+      state: "input-available",
+    });
+
+    expect(settleIdleActivity(card, true)).toMatchObject({
+      status: "success",
+      statusLabel: "done",
+      tone: "neutral",
+    });
+  });
+
   test("projects a standardized memory envelope", () => {
     const card = projectHarnessTool({
       toolName: "remember",

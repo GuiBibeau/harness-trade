@@ -94,6 +94,25 @@ export type HarnessPresentationEnvelope = {
   nextRunAt?: string;
 };
 
+export function settleIdleActivity(
+  card: WorkstreamCard,
+  sessionIdle: boolean,
+): WorkstreamCard {
+  if (
+    !sessionIdle ||
+    card.kind !== "activity" ||
+    !["pending", "running"].includes(card.status)
+  ) {
+    return card;
+  }
+  return {
+    ...card,
+    status: "success",
+    statusLabel: "done",
+    tone: "neutral",
+  };
+}
+
 export type HarnessToolProjectionInput = {
   toolName?: string;
   state?: string;

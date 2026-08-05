@@ -10,7 +10,7 @@ import {
   type EveMessagePart,
   useEveAgent,
 } from "eve/svelte";
-import { onMount } from "svelte";
+import { onDestroy, onMount } from "svelte";
 import { AGENT_ACTION_META, type AgentActionName } from "./actions";
 import {
   activateAgentConversation,
@@ -32,6 +32,10 @@ import {
   type AgentThreadStorage,
   prepareAgentThreadForResume,
 } from "./thread-cache";
+import {
+  createTurnCancellation,
+  type TurnCancellationSnapshot,
+} from "./turn-cancellation";
 
 export type AgentConversationOptions = {
   buildClientContext: () => AgentClientContext;
@@ -91,20 +95,35 @@ export function createAgentConversation(options: AgentConversationOptions) {
   let paperActionReceipts = $state<Record<string, AgentPaperActionReceipt>>({
     ...(restoredThread?.paperActionReceipts ?? {}),
   });
+  let answeredToolCallIds = $state<Record<string, true>>(
+    Object.fromEntries(
+      (restoredThread?.answeredToolCallIds ?? []).map((callId) => [
+        callId,
+        true,
+      ]),
+    ),
+  );
   const paperActionRuns = new Set<string>(
     restoredThread?.paperActionRuns ??
       Object.keys(restoredThread?.paperActionReceipts ?? {}),
   );
   let reconnecting = $state(isSessionState(restoredThread?.session));
   let recoveryError = $state("");
+  let cancellation = $state<TurnCancellationSnapshot>({ state: "idle" });
+  let turnCancellation!: ReturnType<typeof createTurnCancellation>;
   let eve = $state.raw(createAgent(restoredThread));
   let recoveryController: AbortController | null = null;
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
   const working = $derived(
     eve.status === "submitted" || eve.status === "streaming",
   );
   const busy = $derived(reconnecting || recoveryError.length > 0 || working);
-  const messages = $derived(eve.data.messages.map(projectConversationMessage));
+  const messages = $derived(
+    eve.data.messages.map((message) =>
+      projectConversationMessage(message, answeredToolCallIds),
+    ),
+  );
   const pendingRequestCount = $derived(
     messages.reduce(
       (count, message) =>
@@ -118,7 +137,10 @@ export function createAgentConversation(options: AgentConversationOptions) {
 
   $effect(() => {
     if (!options.storage) return;
-    persistCurrent();
+    void eve.session;
+    void eve.events.length;
+    void paperActionReceipts;
+    schedulePersist();
   });
 
   $effect(() => {
@@ -149,12 +171,34 @@ export function createAgentConversation(options: AgentConversationOptions) {
     return () => recoveryController?.abort();
   });
 
+  onDestroy(() => {
+    recoveryController?.abort();
+    persistCurrent();
+    eve.stop();
+  });
+
   function createAgent(thread: AgentThreadSnapshot | null) {
-    return useEveAgent({
-      initialSession: thread?.session as never,
-      initialEvents: thread?.events as never,
+    const session = new Client({
+      host: "",
       headers: options.headers,
+      preserveCompletedSessions: true,
+    }).session(isSessionState(thread?.session) ? thread.session : undefined);
+    const cancellationControl = createTurnCancellation({
+      cancel: (turnId) => session.cancel({ turnId }),
+      onChange: (snapshot) => {
+        cancellation = snapshot;
+      },
+    });
+    turnCancellation = cancellationControl;
+    return useEveAgent({
+      session,
+      initialEvents: thread?.events as never,
+      onEvent(event) {
+        cancellationControl.observe(event);
+      },
       onFinish(snapshot) {
+        cancellationControl.reset();
+        cancelScheduledPersistence();
         persistSnapshot(snapshot.session, snapshot.events);
       },
     });
@@ -218,6 +262,7 @@ export function createAgentConversation(options: AgentConversationOptions) {
         thread: {
           session,
           events,
+          answeredToolCallIds: Object.keys(answeredToolCallIds),
           paperActionRuns: [...paperActionRuns],
           paperActionReceipts,
         },
@@ -230,11 +275,30 @@ export function createAgentConversation(options: AgentConversationOptions) {
   }
 
   function persistCurrent(): void {
+    cancelScheduledPersistence();
     persistSnapshot(eve.session, eve.events);
   }
 
+  function schedulePersist(): void {
+    if (persistTimer !== null) return;
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      persistSnapshot(eve.session, eve.events);
+    }, 150);
+  }
+
+  function cancelScheduledPersistence(): void {
+    if (persistTimer === null) return;
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+
   function send(message: string): Promise<void> {
-    if (conversationTitle === "New conversation") {
+    turnCancellation.reset();
+    const hasUserMessage = eve.data.messages.some(
+      (conversationMessage) => conversationMessage.role === "user",
+    );
+    if (!hasUserMessage) {
       conversationTitle = titleFromMessage(message);
       persistCurrent();
     }
@@ -245,17 +309,34 @@ export function createAgentConversation(options: AgentConversationOptions) {
   }
 
   function respond(requestId: string, approved: boolean): Promise<void> {
+    // An input response resumes the parked durable turn. Keep its observed
+    // turn id so Stop can still cancel the resumed execution.
+    turnCancellation.resume();
     return eve.send({
       inputResponses: [{ requestId, optionId: approved ? "approve" : "deny" }],
     });
   }
 
-  function respondToTool(toolCallId: string, approved: boolean): Promise<void> {
+  async function respondToTool(
+    toolCallId: string,
+    approved: boolean,
+  ): Promise<void> {
     const requestId = eve.data.messages
       .flatMap((message) => message.parts.filter(isDynamicToolPart))
       .find((part) => part.toolCallId === toolCallId)?.toolMetadata?.eve
       ?.inputRequest?.requestId;
-    return requestId ? respond(requestId, approved) : Promise.resolve();
+    if (!requestId || answeredToolCallIds[toolCallId]) return;
+    answeredToolCallIds = { ...answeredToolCallIds, [toolCallId]: true };
+    persistCurrent();
+    try {
+      await respond(requestId, approved);
+    } catch (error) {
+      const nextAnswered = { ...answeredToolCallIds };
+      delete nextAnswered[toolCallId];
+      answeredToolCallIds = nextAnswered;
+      persistCurrent();
+      throw error;
+    }
   }
 
   function newConversation(): void {
@@ -326,6 +407,9 @@ export function createAgentConversation(options: AgentConversationOptions) {
     activeConversationId = record.id;
     conversationTitle = record.title;
     paperActionReceipts = { ...(prepared.paperActionReceipts ?? {}) };
+    answeredToolCallIds = Object.fromEntries(
+      (prepared.answeredToolCallIds ?? []).map((callId) => [callId, true]),
+    );
     paperActionRuns.clear();
     for (const callId of prepared.paperActionRuns ?? []) {
       paperActionRuns.add(callId);
@@ -357,6 +441,15 @@ export function createAgentConversation(options: AgentConversationOptions) {
     get conversations() {
       return conversations;
     },
+    get conversationTitle() {
+      return conversationTitle;
+    },
+    get cancellationError() {
+      return cancellation.error ?? "";
+    },
+    get cancellationState() {
+      return cancellation.state;
+    },
     get error() {
       return eve.error;
     },
@@ -382,6 +475,10 @@ export function createAgentConversation(options: AgentConversationOptions) {
       return paperActionReceipts[toolCallId];
     },
     archiveConversation,
+    cancel() {
+      if (!working) return;
+      turnCancellation.request();
+    },
     newConversation,
     persist: persistCurrent,
     restoreConversation,
@@ -391,18 +488,24 @@ export function createAgentConversation(options: AgentConversationOptions) {
   };
 }
 
-function projectConversationMessage(message: {
-  role: string;
-  parts: readonly EveMessagePart[];
-}): AgentConversationMessage {
+function projectConversationMessage(
+  message: {
+    role: string;
+    parts: readonly EveMessagePart[];
+  },
+  answeredToolCallIds: Readonly<Record<string, true>>,
+): AgentConversationMessage {
   return {
     role: message.role,
-    parts: message.parts.flatMap(projectConversationPart),
+    parts: message.parts.flatMap((part) =>
+      projectConversationPart(part, answeredToolCallIds),
+    ),
   };
 }
 
 function projectConversationPart(
   part: EveMessagePart,
+  answeredToolCallIds: Readonly<Record<string, true>>,
 ): AgentConversationPart[] {
   if (part.type === "text") {
     return [{ type: "text", text: part.text }];
@@ -417,7 +520,9 @@ function projectConversationPart(
       input: part.input,
       output: part.output,
       ...(part.errorText ? { errorText: part.errorText } : {}),
-      approvalPending: Boolean(part.toolMetadata?.eve?.inputRequest),
+      approvalPending:
+        Boolean(part.toolMetadata?.eve?.inputRequest) &&
+        !answeredToolCallIds[part.toolCallId],
     },
   ];
 }
