@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  scopeAgentStorage,
-  type AgentStorageScope,
-} from "./scoped-storage";
+import { type AgentStorageScope, scopeAgentStorage } from "./scoped-storage";
 import type { AgentThreadStorage } from "./thread-cache";
 
 function memoryStorage(): AgentThreadStorage {

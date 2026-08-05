@@ -97,7 +97,10 @@ export function createAgentConversation(options: AgentConversationOptions) {
   });
   let answeredToolCallIds = $state<Record<string, true>>(
     Object.fromEntries(
-      (restoredThread?.answeredToolCallIds ?? []).map((callId) => [callId, true]),
+      (restoredThread?.answeredToolCallIds ?? []).map((callId) => [
+        callId,
+        true,
+      ]),
     ),
   );
   const paperActionRuns = new Set<string>(
