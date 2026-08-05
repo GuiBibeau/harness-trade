@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { buildDeskContext, type DeskSnapshotInput } from "./chat-context";
+import {
+  buildDeskContext,
+  buildStandaloneDeskContext,
+  type DeskSnapshotInput,
+} from "./chat-context";
 
 function baseInput(
   overrides: Partial<DeskSnapshotInput> = {},
@@ -54,6 +58,29 @@ describe("buildDeskContext", () => {
     expect(
       buildDeskContext(baseInput({ accountMode: "paper" })).accountMode,
     ).toBe("paper");
+  });
+});
+
+describe("buildStandaloneDeskContext", () => {
+  test("does not present paper portfolio state as live account context", () => {
+    const output = buildStandaloneDeskContext({
+      accountMode: "live",
+      symbol: "SOL",
+      timeframe: "1h",
+      paperPositions: [{ symbol: "BTC", size: 2 }],
+      paperOpenOrders: [{ symbol: "ETH", side: "buy" }],
+      paperEquityUsd: 10_000,
+      watchlist: ["SOL", "BTC"],
+      nowMs: 1_752_936_120_000,
+    });
+
+    expect(output).toMatchObject({
+      accountMode: "live",
+      positions: [],
+      openOrders: [],
+      equityUsd: null,
+      portfolioContext: "fetch-required",
+    });
   });
 });
 

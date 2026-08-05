@@ -11,9 +11,11 @@
   let {
     items,
     onAnswer,
+    showApprovalActions = true,
   }: {
     items: ToolActivityItem[];
     onAnswer: (id: string, approved: boolean) => void;
+    showApprovalActions?: boolean;
   } = $props();
 
   const running = $derived(
@@ -164,7 +166,7 @@
             </div>
           {/if}
 
-          {#if item.approvalPending}
+          {#if item.approvalPending && showApprovalActions}
             <div class="actions">
               <button type="button" onclick={() => onAnswer(item.id, true)}>
                 {item.card.kind === "context" ? "Apply" : "Approve"}

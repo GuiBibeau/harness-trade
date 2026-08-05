@@ -28,6 +28,44 @@ export type DeskSnapshotInput = {
   nowMs: number;
 };
 
+export type StandaloneDeskSnapshotInput = {
+  symbol: string;
+  timeframe: string;
+  accountMode: "live" | "paper";
+  paperPositions: unknown[];
+  paperOpenOrders: unknown[];
+  paperEquityUsd: number | null;
+  watchlist: string[];
+  nowMs: number;
+};
+
+/**
+ * Builds context for the full agent workspace when the terminal page is not
+ * mounted. PAPER can use the persisted local ledger. LIVE deliberately carries
+ * no paper portfolio rows: the agent must fetch fresh server-owned state.
+ */
+export function buildStandaloneDeskContext(
+  input: StandaloneDeskSnapshotInput,
+): Record<string, unknown> {
+  const paper = input.accountMode === "paper";
+  return {
+    ...buildDeskContext({
+      symbol: input.symbol,
+      timeframe: input.timeframe,
+      accountMode: input.accountMode,
+      positions: paper ? input.paperPositions : [],
+      openOrders: paper ? input.paperOpenOrders : [],
+      dayPnlUsd: null,
+      equityUsd: paper ? input.paperEquityUsd : null,
+      monitorRows: [],
+      watchlist: input.watchlist,
+      headlines: [],
+      nowMs: input.nowMs,
+    }),
+    portfolioContext: paper ? "client-canonical" : "fetch-required",
+  };
+}
+
 /** Serialize the desk snapshot for the endpoint. Caps (exact): positions 20,
  * openOrders 20, monitorRows 12, watchlist 30, headlines 8, total JSON
  * length 10_000 chars — when over, drop monitorRows→headlines→openOrders

@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { browser } from "$app/environment";
+  import { tick } from "svelte";
   import { closeChat } from "$lib/chat";
+  import { parseAgentCommand } from "$lib/agent/commands";
   import {
     type AgentClientContext,
     type AgentConversationPart,
     type AgentConversationToolPart,
     createAgentConversation,
   } from "$lib/agent/conversation.svelte";
+  import type { AgentThreadStorage } from "$lib/agent/thread-cache";
   import { AGENT_MODE_LABEL, type AgentMode } from "$lib/agent/modes";
   import {
     type AgentActionExecutor,
@@ -25,6 +27,7 @@
   import { getPrivyAccessToken, privyAuth } from "$lib/privy-auth";
   import { llmProfileHeaderValue } from "$lib/agent/llm-profile-selection";
   import { projectPriceQuote } from "$lib/agent/price-presentation";
+  import { isNearAgentTail } from "$lib/agent/scroll-policy";
   import {
     fetchAgentSkills,
     type SkillListItem,
@@ -34,8 +37,6 @@
     findSkillMention,
     insertSkillMention,
   } from "$lib/agent/skill-mentions";
-  import AgentConversationHistory from "./AgentConversationHistory.svelte";
-  import AgentSettingsModal from "./AgentSettingsModal.svelte";
   import AgentSkillPalette from "./AgentSkillPalette.svelte";
   import MarkdownMessage from "./MarkdownMessage.svelte";
   import PriceQuoteCard from "./PriceQuoteCard.svelte";
@@ -49,7 +50,9 @@
     focusComposerRequest = 0,
     executePaperAction = executeAgentAction,
     onExpand = undefined,
+    onCollapse = undefined,
     onClose = undefined,
+    storage,
   }: {
     buildContext: () => Record<string, unknown>;
     onRequestAuth: () => void;
@@ -58,15 +61,23 @@
     focusComposerRequest?: number;
     executePaperAction?: AgentActionExecutor;
     onExpand?: () => void;
+    onCollapse?: () => void;
     onClose?: () => void;
+    storage: AgentThreadStorage;
   } = $props();
 
   let draft = $state("");
   let scrollEl: HTMLDivElement | null = $state(null);
   let inputEl: HTMLTextAreaElement | null = $state(null);
   let settingsOpen = $state(false);
+  let SettingsModal = $state.raw<
+    typeof import("./AgentSettingsModal.svelte").default | null
+  >(null);
   let settingsSection = $state<"models" | "skills">("models");
   let historyOpen = $state(false);
+  let ConversationHistory = $state.raw<
+    typeof import("./AgentConversationHistory.svelte").default | null
+  >(null);
   let availableSkills = $state<SkillListItem[]>([]);
   let skillsLoading = $state(false);
   let skillsLoadedAt = 0;
@@ -75,14 +86,18 @@
   let skillQuery = $state("");
   let skillMentionStart = $state(-1);
   let skillPaletteIndex = $state(0);
+  let stickToTail = $state(true);
+  let showJumpToLatest = $state(false);
   let handledFocusComposerRequest = 0;
   const agentModes: AgentMode[] = ["observe", "ask", "auto"];
+  // AgentSurface remounts the workspace when its owner/account storage scope changes.
+  // svelte-ignore state_referenced_locally
   const conversation = createAgentConversation({
     buildClientContext,
     executePaperAction: (name, args) => executePaperAction(name, args),
     headers: resolveConversationHeaders,
     isPaper: () => accountMode === "paper",
-    storage: browser ? localStorage : undefined,
+    storage,
   });
 
   async function resolveConversationHeaders(): Promise<Record<string, string>> {
@@ -112,13 +127,37 @@
 
   const agentWorking = $derived(conversation.working);
   const busy = $derived(conversation.busy);
-  const pendingRequestCount = $derived(conversation.pendingRequestCount);
   const hasActiveTool = $derived(
     conversation.messages
       .flatMap((message) => message.parts.filter(isToolPart))
       .some((part) =>
         ["pending", "running", "waiting"].includes(projectPart(part).status),
       ),
+  );
+  const runLabel = $derived(
+    conversation.reconnecting
+      ? "Reconnecting"
+      : conversation.cancellationState === "requested" ||
+          conversation.cancellationState === "cancelling"
+        ? "Stopping"
+        : conversation.working
+          ? "Working"
+          : conversation.status === "error"
+            ? "Needs attention"
+            : "Ready",
+  );
+  const pendingApprovalItems = $derived.by(() =>
+    conversation.messages.flatMap((message) =>
+      message.parts
+        .filter(isToolPart)
+        .filter((part) => part.approvalPending)
+        .map((part) => ({
+          id: part.toolCallId,
+          toolName: part.toolName,
+          card: projectPart(part),
+          approvalPending: true,
+        })),
+    ),
   );
   const matchingSkills = $derived(
     filterMentionedSkills(availableSkills, skillQuery),
@@ -128,7 +167,8 @@
     if (!scrollEl) return;
     void conversation.messages.length;
     void conversation.status;
-    scrollEl.scrollTop = scrollEl.scrollHeight;
+    if (stickToTail) void scrollToLatest();
+    else showJumpToLatest = true;
   });
 
   $effect(() => {
@@ -154,7 +194,7 @@
     if (
       skillsLoading ||
       !$privyAuth.authenticated ||
-      (skillsLoadedAt > 0 && Date.now() - skillsLoadedAt < 5_000)
+      (skillsLoadedAt > 0 && Date.now() - skillsLoadedAt < 5 * 60_000)
     ) {
       return;
     }
@@ -218,16 +258,37 @@
     });
   }
 
-  function openSettings(section: "models" | "skills"): void {
+  async function openSettings(section: "models" | "skills"): Promise<void> {
     settingsSection = section;
     settingsOpen = true;
+    SettingsModal ??= (await import("./AgentSettingsModal.svelte")).default;
+  }
+
+  async function openHistory(): Promise<void> {
+    historyOpen = true;
+    ConversationHistory ??= (
+      await import("./AgentConversationHistory.svelte")
+    ).default;
   }
 
   function sendMessage(value: string): void {
     const text = value.trim();
     if (!text || busy) return;
+    const command = parseAgentCommand(text);
+    if (command) {
+      draft = "";
+      if (command.name === "new") newConversation();
+      else if (command.name === "threads") void openHistory();
+      else if (command.name === "settings") void openSettings("models");
+      else if (command.name === "mode") setAgentMode(command.mode);
+      else if (command.name === "paused") setAgentPaused(command.paused);
+      inputEl?.focus();
+      return;
+    }
     closeSkillPalette();
     draft = "";
+    stickToTail = true;
+    showJumpToLatest = false;
     void conversation.send(text);
     inputEl?.focus();
   }
@@ -370,6 +431,31 @@
 
   function newConversation(): void {
     conversation.newConversation();
+    stickToTail = true;
+    showJumpToLatest = false;
+  }
+
+  function useStarter(prompt: string): void {
+    draft = prompt;
+    requestAnimationFrame(() => {
+      inputEl?.focus();
+      inputEl?.setSelectionRange(prompt.length, prompt.length);
+    });
+  }
+
+  function handleThreadScroll(): void {
+    if (!scrollEl) return;
+    stickToTail = isNearAgentTail(scrollEl);
+    if (stickToTail) showJumpToLatest = false;
+  }
+
+  async function scrollToLatest(force = false): Promise<void> {
+    if (!scrollEl || (!force && !stickToTail)) return;
+    await tick();
+    if (!scrollEl) return;
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    stickToTail = true;
+    showJumpToLatest = false;
   }
 
   function handleExpand(): void {
@@ -401,14 +487,19 @@
           </span>
         {/if}
         <span class="agent-title">Agent</span>
-        <span class="tag durable">
-          DURABLE{pendingRequestCount ? ` · ${pendingRequestCount}` : ""}
+        <span class="conversation-title" title={conversation.conversationTitle}>
+          {conversation.conversationTitle}
+        </span>
+        <span class="run-status" class:working={agentWorking}>
+          <i aria-hidden="true"></i>{runLabel}
         </span>
         {#if $agentState.paused}
           <span class="tag pause" title="Money-PAUSE engaged">PAUSE</span>
         {/if}
         {#if accountMode === "paper"}
           <span class="tag paper">PAPER</span>
+        {:else}
+          <span class="tag live">LIVE</span>
         {/if}
       </div>
       <div class="picker" role="radiogroup" aria-label="Approval mode">
@@ -449,7 +540,7 @@
         type="button"
         aria-label="Conversation history"
         title="Conversations"
-        onclick={() => (historyOpen = true)}
+        onclick={() => void openHistory()}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
@@ -483,7 +574,7 @@
       <button
         class="ghost"
         type="button"
-        disabled={busy}
+        disabled={agentWorking || conversation.reconnecting}
         onclick={newConversation}
         title="New durable conversation"
       >
@@ -494,13 +585,18 @@
           Expand
         </button>
       {/if}
+      {#if layout === "page" && onCollapse}
+        <button class="ghost" type="button" onclick={onCollapse} title="Return to dock">
+          Dock
+        </button>
+      {/if}
       {#if layout === "dock"}
         <button class="ghost" type="button" onclick={handleClose}>Close</button>
       {/if}
     </div>
   </header>
 
-  <div class="agent-scroll" bind:this={scrollEl}>
+  <div class="agent-scroll" bind:this={scrollEl} onscroll={handleThreadScroll}>
     <div class="agent-thread">
       {#if conversation.messages.length === 0 && conversation.status === "ready"}
         <div class="agent-empty">
@@ -512,12 +608,42 @@
                 ? "Observe — research only, no orders."
                 : "Ask mode — every transaction waits for your approval."}
           </p>
-          <ul>
-            <li>show my wallet address and balance</li>
-            <li>long SOL $50 @ 3x market</li>
-            <li>show my live positions and open orders</li>
-            <li>move stop to break-even on SOL</li>
-          </ul>
+          <div class="starter-grid">
+            <button
+              type="button"
+              onclick={() =>
+                useStarter("Review my account, current exposure, and biggest risk.")}
+            >
+              <strong>Review account</strong><span>Exposure, PnL, and risk</span>
+            </button>
+            <button
+              type="button"
+              onclick={() =>
+                useStarter(
+                  "Build a trade plan for SOL with entry, invalidation, sizing, take-profit, and stop-loss.",
+                )}
+            >
+              <strong>Plan a SOL trade</strong><span>Entry, size, TP, and SL</span>
+            </button>
+            <button
+              type="button"
+              onclick={() =>
+                useStarter(
+                  "Inspect my open positions and recommend the safest risk adjustments. Do not execute yet.",
+                )}
+            >
+              <strong>Manage risk</strong><span>Stops and open positions</span>
+            </button>
+            <button
+              type="button"
+              onclick={() =>
+                useStarter(
+                  "Create a recurring routine to review my portfolio and market risk every morning.",
+                )}
+            >
+              <strong>Create a routine</strong><span>Persistent scheduled checks</span>
+            </button>
+          </div>
         </div>
       {/if}
 
@@ -534,6 +660,10 @@
               {#if isFirstToolPart(message.parts, part)}
                 <ToolActivity
                   items={toolActivityItems(message.parts)}
+                  showApprovalActions={!message.parts.some(
+                    (messagePart) =>
+                      isToolPart(messagePart) && messagePart.approvalPending,
+                  )}
                   onAnswer={(toolCallId, approved) =>
                     answerTool(toolCallId, approved)}
                 />
@@ -581,9 +711,30 @@
         <p class="state error">{conversation.error?.message ?? "agent-transport-error"}</p>
       {/if}
     </div>
+    {#if showJumpToLatest}
+      <button
+        class="jump-latest"
+        type="button"
+        onclick={() => void scrollToLatest(true)}
+      >
+        Latest ↓
+      </button>
+    {/if}
   </div>
 
   <form class="composer" onsubmit={submit}>
+    {#if pendingApprovalItems.length > 0}
+      <aside class="approval-tray" aria-label="Pending agent approval">
+        <div class="approval-heading">
+          <strong>Approval required</strong>
+          <span>{pendingApprovalItems.length} pending</span>
+        </div>
+        <ToolActivity
+          items={pendingApprovalItems}
+          onAnswer={(toolCallId, approved) => answerTool(toolCallId, approved)}
+        />
+      </aside>
+    {/if}
     <div class="composer-shell">
       {#if skillPaletteOpen}
         <AgentSkillPalette
@@ -605,40 +756,54 @@
         bind:this={inputEl}
         bind:value={draft}
         rows={layout === "page" ? 3 : 2}
-        placeholder="Message the agent · @ for skills"
+        placeholder="Message the agent · @ skills · / commands"
         disabled={busy || !$privyAuth.authenticated}
         onkeydown={onKeydown}
         oninput={onComposerInput}
       ></textarea>
       <div class="composer-bar">
         <span class="composer-hint">
-          Enter to send · Shift+Enter newline · @ skills
+          Enter to send · @ skills · /new /threads /pause
         </span>
-        <button
-          class="secondary"
-          type="submit"
-          disabled={busy || !$privyAuth.authenticated || draft.trim().length === 0}
-        >
-          Send
-        </button>
+        {#if agentWorking}
+          <button
+            class="stop"
+            type="button"
+            disabled={conversation.cancellationState !== "idle"}
+            onclick={() => conversation.cancel()}
+          >
+            {conversation.cancellationState === "idle" ? "Stop" : "Stopping…"}
+          </button>
+        {:else}
+          <button
+            class="secondary"
+            type="submit"
+            disabled={busy || !$privyAuth.authenticated || draft.trim().length === 0}
+          >
+            Send
+          </button>
+        {/if}
       </div>
+      {#if conversation.cancellationError}
+        <p class="cancel-error">{conversation.cancellationError}</p>
+      {/if}
     </div>
   </form>
 </div>
 
-{#if settingsOpen}
-  <AgentSettingsModal
+{#if settingsOpen && SettingsModal}
+  <SettingsModal
     initialSection={settingsSection}
     {onRequestAuth}
     onclose={() => (settingsOpen = false)}
   />
 {/if}
 
-{#if historyOpen}
-  <AgentConversationHistory
+{#if historyOpen && ConversationHistory}
+  <ConversationHistory
     conversations={conversation.conversations}
     activeId={conversation.activeConversationId}
-    {busy}
+    busy={agentWorking || conversation.reconnecting}
     onnew={() => conversation.newConversation()}
     onresume={(id) => conversation.resumeConversation(id)}
     onarchive={(id) => conversation.archiveConversation(id)}
@@ -745,14 +910,57 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    min-width: 0;
   }
 
   .agent-title {
+    flex: 0 0 auto;
     color: var(--accent);
     font-size: 0.62rem;
     font-weight: 800;
     letter-spacing: 0.1em;
     text-transform: uppercase;
+  }
+
+  .conversation-title {
+    max-width: 12rem;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .layout-dock .conversation-title {
+    max-width: 7rem;
+  }
+
+  .run-status {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.28rem;
+    color: var(--faint);
+    font-size: 0.6rem;
+  }
+
+  .run-status i {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+
+  .run-status.working i {
+    background: var(--up);
+    animation: pulse-status 0.75s ease-in-out infinite alternate;
+  }
+
+  @keyframes pulse-status {
+    to {
+      opacity: 0.3;
+    }
   }
 
   .compact-page-id,
@@ -793,7 +1001,7 @@
     color: var(--amber);
   }
 
-  .tag.durable {
+  .tag.live {
     color: var(--up);
   }
 
@@ -886,6 +1094,7 @@
   }
 
   .agent-scroll {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
@@ -928,20 +1137,59 @@
     min-height: 2.6em;
   }
 
-  .agent-empty ul {
+  .starter-grid {
     margin: 0;
     padding: 0;
-    list-style: none;
     display: grid;
-    gap: 0.35rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+    text-align: left;
   }
 
-  .agent-empty li {
+  .starter-grid button {
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+    padding: 0.6rem;
+    color: var(--muted);
+    font: inherit;
     font-size: 0.76rem;
-    color: var(--faint);
     border: 1px solid var(--line-soft);
-    padding: 0.4rem 0.55rem;
+    background: var(--surface-2);
+    cursor: pointer;
     text-align: left;
+  }
+
+  .starter-grid button:hover,
+  .starter-grid button:focus-visible {
+    color: var(--ink);
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  .starter-grid strong {
+    color: var(--ink);
+    font-size: 0.72rem;
+  }
+
+  .starter-grid span {
+    color: var(--faint);
+    font-size: 0.65rem;
+  }
+
+  .jump-latest {
+    position: sticky;
+    bottom: 0.6rem;
+    display: block;
+    margin: 0 0.7rem 0 auto;
+    padding: 0.28rem 0.5rem;
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.65rem;
+    font-weight: 700;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    cursor: pointer;
   }
 
   .msg {
@@ -1033,6 +1281,30 @@
     width: 100%;
   }
 
+  .approval-tray {
+    max-width: 48rem;
+    margin: 0 auto 0.55rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--amber);
+    background: var(--surface-2);
+  }
+
+  .approval-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.25rem;
+    color: var(--amber);
+    font-size: 0.64rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .approval-heading span {
+    color: var(--faint);
+  }
+
   .layout-page .composer {
     position: sticky;
     z-index: 3;
@@ -1089,7 +1361,8 @@
 
   /* Local button skins — full page may not load terminal.css utilities. */
   .primary,
-  .secondary {
+  .secondary,
+  .stop {
     font: inherit;
     font-size: 0.72rem;
     font-weight: 700;
@@ -1107,6 +1380,24 @@
   .secondary {
     color: var(--ink);
     background: var(--surface-2);
+  }
+
+  .stop {
+    min-width: 4.5rem;
+    color: var(--red);
+    border-color: var(--red);
+    background: transparent;
+  }
+
+  .stop:disabled {
+    opacity: 0.55;
+    cursor: wait;
+  }
+
+  .cancel-error {
+    margin: 0;
+    color: var(--red);
+    font-size: 0.66rem;
   }
 
   .secondary:disabled {
@@ -1160,6 +1451,10 @@
       min-width: 4.2rem;
     }
 
+    .layout-page .conversation-title {
+      max-width: 8rem;
+    }
+
     .layout-dock {
       /* Narrow: full-width sheet under topbar, still above status line. */
       position: fixed;
@@ -1175,8 +1470,20 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .thinking i {
+    .thinking i,
+    .run-status.working i {
       animation: none;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .starter-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .conversation-title,
+    .run-status {
+      display: none;
     }
   }
 </style>

@@ -4,13 +4,16 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import AgentChat from "../components/AgentChat.svelte";
+  import AgentSurface from "../components/AgentSurface.svelte";
   import AuthModal from "../components/AuthModal.svelte";
   import {
     type AgentActionExecutor,
     executeAgentHostAction,
   } from "$lib/agent/host";
-  import { buildPaperDeskContext, createPaperAgentHost } from "$lib/agent/paper-host";
+  import {
+    buildAgentPageDeskContext,
+    createPaperAgentHost,
+  } from "$lib/agent/paper-host";
   import { chatState } from "$lib/chat";
   import { initializePrivyAuth, privyAuth } from "$lib/privy-auth";
 
@@ -58,8 +61,8 @@
   </nav>
 
   <main class="agent-main">
-    <AgentChat
-      buildContext={buildPaperDeskContext}
+    <AgentSurface
+      buildContext={() => buildAgentPageDeskContext(accountMode)}
       {executePaperAction}
       onRequestAuth={requestAuth}
       {accountMode}

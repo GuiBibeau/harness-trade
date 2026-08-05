@@ -2,7 +2,7 @@
 // Live signing stays on /terminal — this host mutates the shared paper ledger.
 
 import { get } from "svelte/store";
-import { buildDeskContext } from "$lib/chat-context";
+import { buildStandaloneDeskContext } from "$lib/chat-context";
 import {
   DEFAULT_PHOENIX_SYMBOL,
   fetchPhoenixCandles,
@@ -69,22 +69,25 @@ async function resolvePrice(
   return null;
 }
 
-export function buildPaperDeskContext(): Record<string, unknown> {
+export function buildAgentPageDeskContext(
+  accountMode: "paper" | "live",
+): Record<string, unknown> {
   const ledger = get(paperLedger);
   const trader = ledgerToTraderState(ledger);
-  return buildDeskContext({
-    accountMode: "paper",
+  return buildStandaloneDeskContext({
+    accountMode,
     symbol: readPrefsSymbol(),
     timeframe: readPrefsTimeframe(),
-    positions: trader.positions,
-    openOrders: trader.orders,
-    dayPnlUsd: null,
-    equityUsd: trader.totalCollateralUsd,
-    monitorRows: [],
+    paperPositions: trader.positions,
+    paperOpenOrders: trader.orders,
+    paperEquityUsd: trader.totalCollateralUsd,
     watchlist: readWatchlist(),
-    headlines: [],
     nowMs: Date.now(),
   });
+}
+
+export function buildPaperDeskContext(): Record<string, unknown> {
+  return buildAgentPageDeskContext("paper");
 }
 
 export function createPaperAgentHost(): AgentHostHandlers {

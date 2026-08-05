@@ -1,8 +1,7 @@
 <script lang="ts">
   // Dock shell — presentation lives in AgentChat (shared with full-page).
-  import { goto } from "$app/navigation";
   import { onDestroy } from "svelte";
-  import AgentChat from "./AgentChat.svelte";
+  import AgentSurface from "./AgentSurface.svelte";
 
   let {
     buildContext,
@@ -28,9 +27,18 @@
 
   let resizeHandle: HTMLDivElement | undefined = $state();
   let resizing = $state(false);
+  let expanded = $state(false);
 
   function expand(): void {
-    void goto(`/terminal/agent?account=${accountMode}`);
+    expanded = true;
+  }
+
+  function collapse(): void {
+    expanded = false;
+  }
+
+  function onGlobalKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape" && expanded) collapse();
   }
 
   function startResize(event: PointerEvent): void {
@@ -84,40 +92,62 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div
-  bind:this={resizeHandle}
-  class="dock-resizer"
-  class:active={resizing}
-  role="separator"
-  aria-label="Resize agent dock"
-  aria-orientation="vertical"
-  aria-valuemin={minDockWidth}
-  aria-valuemax={maxDockWidth}
-  aria-valuenow={Math.round(dockWidth)}
-  tabindex="0"
-  title="Drag to resize agent dock"
-  onpointerdown={startResize}
-  onpointermove={resize}
-  onpointerup={finishResize}
-  onpointercancel={cancelResize}
-  onlostpointercapture={cancelResize}
-  onkeydown={resizeWithKeyboard}
->
-  <span aria-hidden="true"></span>
+<svelte:window onkeydown={onGlobalKeydown} />
+
+<div class="agent-panel" class:expanded>
+  {#if !expanded}
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      bind:this={resizeHandle}
+      class="dock-resizer"
+      class:active={resizing}
+      role="separator"
+      aria-label="Resize agent dock"
+      aria-orientation="vertical"
+      aria-valuemin={minDockWidth}
+      aria-valuemax={maxDockWidth}
+      aria-valuenow={Math.round(dockWidth)}
+      tabindex="0"
+      title="Drag to resize agent dock"
+      onpointerdown={startResize}
+      onpointermove={resize}
+      onpointerup={finishResize}
+      onpointercancel={cancelResize}
+      onlostpointercapture={cancelResize}
+      onkeydown={resizeWithKeyboard}
+    >
+      <span aria-hidden="true"></span>
+    </div>
+  {/if}
+
+  <AgentSurface
+    {buildContext}
+    {onRequestAuth}
+    {accountMode}
+    {focusComposerRequest}
+    layout={expanded ? "page" : "dock"}
+    onExpand={expand}
+    onCollapse={collapse}
+  />
 </div>
 
-<AgentChat
-  {buildContext}
-  {onRequestAuth}
-  {accountMode}
-  {focusComposerRequest}
-  layout="dock"
-  onExpand={expand}
-/>
-
 <style>
+  .agent-panel {
+    display: contents;
+  }
+
+  .agent-panel.expanded {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    background: var(--surface);
+  }
+
   .dock-resizer {
     position: fixed;
     top: var(--topbar-h, 3rem);
