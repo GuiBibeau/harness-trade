@@ -1,9 +1,49 @@
 import { describe, expect, test } from "bun:test";
 import {
   mergeTraderView,
+  overlayOnChainCollateral,
   type PhoenixTraderState,
   parseTraderStatePayload,
 } from "./phoenix-trade";
+
+describe("overlayOnChainCollateral", () => {
+  test("replaces stale parent collateral inside the all-subaccount total", () => {
+    const state: PhoenixTraderState = {
+      registered: true,
+      apiSlot: 10,
+      collateralUsd: 0,
+      totalCollateralUsd: 25,
+      effectiveCollateralUsd: null,
+      unrealizedPnlUsd: null,
+      riskTier: null,
+      positions: [],
+      orders: [],
+    };
+
+    const overlaid = overlayOnChainCollateral(state, 61.51);
+    expect(overlaid.collateralUsd).toBe(61.51);
+    expect(overlaid.totalCollateralUsd).toBeCloseTo(86.51);
+    expect(overlaid.chainVerified).toBe(true);
+  });
+
+  test("uses chain collateral as the total when the indexer has no snapshot", () => {
+    const state: PhoenixTraderState = {
+      registered: false,
+      apiSlot: null,
+      collateralUsd: null,
+      totalCollateralUsd: null,
+      effectiveCollateralUsd: null,
+      unrealizedPnlUsd: null,
+      riskTier: null,
+      positions: [],
+      orders: [],
+    };
+
+    expect(overlayOnChainCollateral(state, 61.51).totalCollateralUsd).toBe(
+      61.51,
+    );
+  });
+});
 
 // Lot decimals mirror the live /exchange config for the fixture symbols
 // (ANSEM baseLotsDecimals=0 → 1 lot = 1 unit; AAPL=3 → 1 lot = 0.001).

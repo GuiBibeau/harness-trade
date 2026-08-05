@@ -212,6 +212,30 @@ export type ParsedTraderSnapshot = {
   subaccountIndexes: number[];
 };
 
+/**
+ * Replace the indexer's parent collateral with the current trader-PDA value
+ * while preserving isolated-subaccount margin in the account total. The
+ * indexer can lag immediately after a deposit, so updating only
+ * `collateralUsd` would leave `totalCollateralUsd` stale in the funds header.
+ */
+export function overlayOnChainCollateral(
+  state: PhoenixTraderState,
+  chainCollateralUsd: number,
+): PhoenixTraderState {
+  const indexedParentUsd = state.collateralUsd ?? 0;
+  const isolatedUsd =
+    state.totalCollateralUsd === null
+      ? 0
+      : Math.max(0, state.totalCollateralUsd - indexedParentUsd);
+  return {
+    ...state,
+    registered: true,
+    collateralUsd: chainCollateralUsd,
+    totalCollateralUsd: chainCollateralUsd + isolatedUsd,
+    chainVerified: true,
+  };
+}
+
 // Pure parser for the /v1/trader/state payload — exported so tests can feed
 // it fixture payloads (isolated-subaccount positions included) without
 // network. Live schema (2026-07-03): { traderPdaIndex, snapshot:

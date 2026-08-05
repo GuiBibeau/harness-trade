@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  accountFundsPresentation,
   aiErr,
   humanizeBalanceError,
   humanizePrivyError,
@@ -7,6 +8,50 @@ import {
   shortEmail,
   walletStatusText,
 } from "./account-format";
+
+describe("accountFundsPresentation", () => {
+  test("does not present wallet USDC as a complete total while Phoenix is loading", () => {
+    expect(
+      accountFundsPresentation({
+        walletUsd: 1.11,
+        walletText: "1.11 USDC",
+        phoenixUsd: 61.51,
+        phoenixStatus: "loading",
+      }),
+    ).toEqual({
+      totalText: "Loading total…",
+      phoenixText: "Phoenix loading…",
+    });
+  });
+
+  test("labels the wallet-only amount as partial when Phoenix is unavailable", () => {
+    expect(
+      accountFundsPresentation({
+        walletUsd: 1.11,
+        walletText: "1.11 USDC",
+        phoenixUsd: 0,
+        phoenixStatus: "error",
+      }),
+    ).toEqual({
+      totalText: "1.11 USDC · partial",
+      phoenixText: "Phoenix unavailable",
+    });
+  });
+
+  test("adds wallet and Phoenix only after both sources are ready", () => {
+    expect(
+      accountFundsPresentation({
+        walletUsd: 1.11,
+        walletText: "1.11 USDC",
+        phoenixUsd: 61.51,
+        phoenixStatus: "ready",
+      }),
+    ).toEqual({
+      totalText: "62.62 USDC",
+      phoenixText: "$61.51 phoenix",
+    });
+  });
+});
 
 describe("shortAddress", () => {
   test("empty/null → --", () => {

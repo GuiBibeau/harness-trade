@@ -4,6 +4,63 @@
 
 import type { PrivyAuthState } from "$lib/privy-auth";
 
+export type PhoenixFundsStatus = "idle" | "loading" | "ready" | "error";
+
+export type AccountFundsPresentation = {
+  totalText: string;
+  phoenixText: string;
+};
+
+const formatUsdc = (usd: number): string =>
+  `${usd.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} USDC`;
+
+/**
+ * A wallet balance is only one part of the account total. Keep the total
+ * explicitly pending/partial until Phoenix has answered, so a fast wallet
+ * RPC cannot momentarily understate funds as though the number were final.
+ */
+export function accountFundsPresentation({
+  walletUsd,
+  walletText,
+  phoenixUsd,
+  phoenixStatus,
+}: {
+  walletUsd: number | null;
+  walletText: string;
+  phoenixUsd: number;
+  phoenixStatus: PhoenixFundsStatus;
+}): AccountFundsPresentation {
+  if (walletUsd === null) {
+    return {
+      totalText: walletText,
+      phoenixText:
+        phoenixStatus === "error" ? "Phoenix unavailable" : "Phoenix loading…",
+    };
+  }
+  if (phoenixStatus === "error") {
+    return {
+      totalText: `${formatUsdc(walletUsd)} · partial`,
+      phoenixText: "Phoenix unavailable",
+    };
+  }
+  if (phoenixStatus !== "ready") {
+    return {
+      totalText: "Loading total…",
+      phoenixText: "Phoenix loading…",
+    };
+  }
+  return {
+    totalText: formatUsdc(walletUsd + phoenixUsd),
+    phoenixText: `$${phoenixUsd.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} phoenix`,
+  };
+}
+
 export function shortAddress(value: string | null): string {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return "--";

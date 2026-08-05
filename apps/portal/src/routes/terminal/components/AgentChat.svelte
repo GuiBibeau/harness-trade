@@ -394,6 +394,12 @@
   <header class="agent-head">
     <div class="agent-head-left">
       <div class="agent-title-row">
+        {#if layout === "page"}
+          <span class="compact-page-id">
+            <a href="/terminal">Harness</a>
+            <span aria-hidden="true">/</span>
+          </span>
+        {/if}
         <span class="agent-title">Agent</span>
         <span class="tag durable">
           DURABLE{pendingRequestCount ? ` · ${pendingRequestCount}` : ""}
@@ -425,6 +431,18 @@
       </div>
     </div>
     <div class="agent-head-right">
+      {#if layout === "page"}
+        <a class="ghost compact-page-action" href="/terminal">Terminal</a>
+        {#if !$privyAuth.authenticated && $privyAuth.status !== "loading"}
+          <button
+            class="ghost compact-page-action"
+            type="button"
+            onclick={onRequestAuth}
+          >
+            Sign in
+          </button>
+        {/if}
+      {/if}
       <button
         class="ghost icon"
         class:active={historyOpen}
@@ -734,6 +752,26 @@
     font-size: 0.62rem;
     font-weight: 800;
     letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .compact-page-id,
+  .compact-page-action {
+    display: none;
+  }
+
+  .compact-page-id {
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--faint);
+  }
+
+  .compact-page-id a {
+    color: var(--accent);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-decoration: none;
     text-transform: uppercase;
   }
 
@@ -1089,6 +1127,39 @@
   }
 
   @media (max-width: 1100px) {
+    .layout-page .agent-head {
+      justify-content: flex-start;
+      gap: 0.45rem;
+      min-height: 3.1rem;
+      padding: 0.55rem 0.7rem;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+
+    .layout-page .agent-head-left,
+    .layout-page .agent-head-right {
+      flex: 0 0 auto;
+    }
+
+    .layout-page .agent-head-right {
+      margin-left: auto;
+    }
+
+    .layout-page .compact-page-id,
+    .layout-page .compact-page-action {
+      display: inline-flex;
+    }
+
+    .layout-page .compact-page-action {
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+    }
+
+    .layout-page .picker button {
+      min-width: 4.2rem;
+    }
+
     .layout-dock {
       /* Narrow: full-width sheet under topbar, still above status line. */
       position: fixed;
