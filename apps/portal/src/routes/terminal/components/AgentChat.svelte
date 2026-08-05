@@ -1419,21 +1419,38 @@
 
   @media (max-width: 1100px) {
     .layout-page .agent-head {
-      justify-content: flex-start;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "title actions"
+        "modes modes";
+      align-items: center;
       gap: 0.45rem;
-      min-height: 3.1rem;
       padding: 0.55rem 0.7rem;
+    }
+
+    .layout-page .agent-head-left {
+      display: contents;
+    }
+
+    .layout-page .agent-title-row {
+      grid-area: title;
+    }
+
+    .layout-page .picker {
+      grid-area: modes;
+      width: 100%;
+    }
+
+    .layout-page .picker button {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+
+    .layout-page .agent-head-right {
+      grid-area: actions;
+      justify-content: flex-end;
       overflow-x: auto;
-      overflow-y: hidden;
-    }
-
-    .layout-page .agent-head-left,
-    .layout-page .agent-head-right {
-      flex: 0 0 auto;
-    }
-
-    .layout-page .agent-head-right {
-      margin-left: auto;
     }
 
     .layout-page .compact-page-id,
@@ -1445,10 +1462,6 @@
       align-items: center;
       justify-content: center;
       text-decoration: none;
-    }
-
-    .layout-page .picker button {
-      min-width: 4.2rem;
     }
 
     .layout-page .conversation-title {
