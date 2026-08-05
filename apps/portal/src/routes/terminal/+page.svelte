@@ -70,9 +70,11 @@
     providePanelLayout,
   } from "$lib/terminal/layout";
   import {
+    accountFundsPresentation,
     aiErr,
     humanizeBalanceError,
     shortAddress,
+    type PhoenixFundsStatus,
     walletFundsLabel,
   } from "$lib/terminal/account-format";
   import {
@@ -548,6 +550,9 @@
   let solBalanceValue: number | null = null;
   let walletCopied = false;
   let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
+  let phoenixFundsStatus: PhoenixFundsStatus = "idle";
+  let phoenixFundsStatusAuthority = "";
+  let phoenixFundsStatusTimer: ReturnType<typeof setTimeout> | null = null;
   let agentCustodyAddress: string | null = null;
   let agentCustodySolText = "-- SOL";
   let agentCustodySpendableLamports = 0;
@@ -1057,13 +1062,13 @@
   // account dropdown row shows the wallet/phoenix split underneath.
   $: phoenixTotalCollateral =
     phoenixTrader?.totalCollateralUsd ?? phoenixCollateral;
-  $: totalFundsText =
-    usdcBalanceValue === null
-      ? usdcBalanceText
-      : `${(usdcBalanceValue + phoenixTotalCollateral).toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })} USDC`;
+  $: fundsPresentation = accountFundsPresentation({
+    walletUsd: usdcBalanceValue,
+    walletText: usdcBalanceText,
+    phoenixUsd: phoenixTotalCollateral,
+    phoenixStatus: paperMode || livePhoenixTrader ? "ready" : phoenixFundsStatus,
+  });
+  $: totalFundsText = fundsPresentation.totalText;
   $: balanceText = walletFundsLabel(
     $privyAuth,
     walletBalanceStatus,
@@ -1112,9 +1117,11 @@
   let refreshedAuthority: string | null = null;
   $: if (phoenixAuthority && refreshedAuthority !== phoenixAuthority) {
     refreshedAuthority = phoenixAuthority;
+    beginPhoenixFundsLoad(phoenixAuthority);
     void refreshPhoenixTrader();
   } else if (!phoenixAuthority) {
     refreshedAuthority = null;
+    clearPhoenixFundsLoad();
   }
   $: if (!paperMode && phoenixAuthority)
     void ensurePhoenixOnboarding(phoenixAuthority, liveExecutionEpoch);
@@ -2110,6 +2117,7 @@
       if (fundsPollTimer !== null) window.clearInterval(fundsPollTimer);
       if (wizardPollTimer !== null) window.clearInterval(wizardPollTimer);
       if (copyResetTimer) clearTimeout(copyResetTimer);
+      if (phoenixFundsStatusTimer) clearTimeout(phoenixFundsStatusTimer);
       spotTicket.dispose();
       if (spotChartTimer) clearInterval(spotChartTimer);
       if (structureTimer !== null) clearTimeout(structureTimer);
@@ -3186,6 +3194,50 @@
   }
 
   // ── Phoenix venue actions ─────────────────────────────────────────
+  function clearPhoenixFundsStatusTimer(): void {
+    if (!phoenixFundsStatusTimer) return;
+    clearTimeout(phoenixFundsStatusTimer);
+    phoenixFundsStatusTimer = null;
+  }
+
+  function clearPhoenixFundsLoad(): void {
+    clearPhoenixFundsStatusTimer();
+    phoenixFundsStatusAuthority = "";
+    phoenixFundsStatus = "idle";
+  }
+
+  function beginPhoenixFundsLoad(authority: string, force = false): void {
+    if (!authority) return;
+    if (!force && livePhoenixTrader) {
+      phoenixFundsStatusAuthority = authority;
+      phoenixFundsStatus = "ready";
+      return;
+    }
+    clearPhoenixFundsStatusTimer();
+    phoenixFundsStatusAuthority = authority;
+    phoenixFundsStatus = "loading";
+    // A slow Phoenix/RPC request must not leave the account header claiming
+    // to load forever. Late responses still land and replace this state.
+    phoenixFundsStatusTimer = setTimeout(() => {
+      if (
+        phoenixFundsStatusAuthority === authority &&
+        phoenixFundsStatus === "loading"
+      ) {
+        phoenixFundsStatus = "error";
+      }
+      phoenixFundsStatusTimer = null;
+    }, 8_000);
+  }
+
+  function settlePhoenixFundsLoad(
+    authority: string,
+    status: "ready" | "error",
+  ): void {
+    if (phoenixFundsStatusAuthority !== authority) return;
+    clearPhoenixFundsStatusTimer();
+    phoenixFundsStatus = status;
+  }
+
   async function refreshPhoenixTrader(): Promise<void> {
     const authority = phoenixAuthority;
     if (!authority) return;
@@ -3195,20 +3247,18 @@
       // Phoenix indexer lags — without the overlay, "Deposit first" kept
       // showing after a successful deposit.
       const trade = await tradeModule();
-      const [state, chainCollateralUsd] = await Promise.all([
+      const [apiState, chainCollateralUsd] = await Promise.all([
         trade.fetchPhoenixTraderState(authority),
         trade.fetchOnChainCollateralUsd(solanaRpcUrl(), authority),
       ]);
-      if (chainCollateralUsd !== null) {
-        state.registered = true;
-        state.collateralUsd = chainCollateralUsd;
-        state.chainVerified = true;
-      } else {
-        state.chainVerified = false;
-      }
+      const state =
+        chainCollateralUsd !== null
+          ? trade.overlayOnChainCollateral(apiState, chainCollateralUsd)
+          : { ...apiState, chainVerified: false };
       // Store is keyed per wallet, so a mid-flight switch cannot
       // cross-pollinate — record under the authority we fetched for.
       recordSnapshot(authority, state);
+      settlePhoenixFundsLoad(authority, "ready");
       // Day P&L rides the same refresh: sample equity as the terminal
       // shows it (collateral + live uPnL), no extra RPC. Wait a tick so
       // the snapshot-derived reactives have settled first.
@@ -3221,6 +3271,7 @@
       }
     } catch {
       // transient API hiccup — keep last state
+      if (!livePhoenixTrader) settlePhoenixFundsLoad(authority, "error");
     }
   }
 
@@ -6414,7 +6465,8 @@
       status: walletBalanceStatus,
       error: walletBalanceError,
       usdcValue: usdcBalanceValue,
-      phoenixCollateral: phoenixTotalCollateral,
+      phoenixStatus: paperMode || livePhoenixTrader ? "ready" : phoenixFundsStatus,
+      phoenixText: fundsPresentation.phoenixText,
       screen: walletScreen,
       whitelisted: phoenixWhitelisted,
       copied: walletCopied,
@@ -6440,6 +6492,7 @@
     oncopyaddress={copyWalletAddress}
     onrefreshbalances={() => {
       void refreshWalletBalance();
+      if (phoenixAuthority) beginPhoenixFundsLoad(phoenixAuthority, true);
       void refreshPhoenixTrader();
       void refreshAgentCustodyWallet();
     }}

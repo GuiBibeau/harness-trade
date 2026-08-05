@@ -5,6 +5,7 @@
   import {
     shortAddress,
     shortEmail,
+    type PhoenixFundsStatus,
     walletStatusText,
   } from "$lib/terminal/account-format";
   import { alertsStore } from "$lib/terminal/alerts";
@@ -48,7 +49,8 @@
       status: "idle" | "loading" | "ready" | "error";
       error: string;
       usdcValue: number | null;
-      phoenixCollateral: number;
+      phoenixStatus: PhoenixFundsStatus;
+      phoenixText: string;
       screen: { flagged: boolean; checked: boolean };
       whitelisted: boolean | null;
       copied: boolean;
@@ -88,7 +90,8 @@
   const walletBalanceStatus = $derived(wallet.status);
   const walletBalanceError = $derived(wallet.error);
   const usdcBalanceValue = $derived(wallet.usdcValue);
-  const phoenixTotalCollateral = $derived(wallet.phoenixCollateral);
+  const phoenixFundsStatus = $derived(wallet.phoenixStatus);
+  const phoenixFundsText = $derived(wallet.phoenixText);
   const walletScreen = $derived(wallet.screen);
   const phoenixWhitelisted = $derived(wallet.whitelisted);
   const walletCopied = $derived(wallet.copied);
@@ -299,19 +302,19 @@
               <span class="account-row-label">Funds</span>
               <span class="account-row-value mono">
                 {balanceText}
-                {#if phoenixTotalCollateral > 0 && usdcBalanceValue !== null}
+                {#if usdcBalanceValue !== null}
                   <small class="funds-split">
-                    {money(usdcBalanceValue, 2)} wallet · {money(phoenixTotalCollateral, 2)} phoenix
+                    {money(usdcBalanceValue, 2)} wallet · {phoenixFundsText}
                   </small>
                 {/if}
               </span>
               <button
                 class="row-action"
                 type="button"
-                disabled={!$privyAuth.walletAddress || walletBalanceStatus === "loading"}
+                disabled={!$privyAuth.walletAddress || walletBalanceStatus === "loading" || phoenixFundsStatus === "loading"}
                 onclick={onrefreshbalances}
               >
-                {walletBalanceStatus === "loading" ? "…" : "Refresh"}
+                {walletBalanceStatus === "loading" || phoenixFundsStatus === "loading" ? "…" : "Refresh"}
               </button>
             </div>
 

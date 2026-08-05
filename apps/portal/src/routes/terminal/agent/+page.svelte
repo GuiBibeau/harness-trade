@@ -146,4 +146,10 @@
     flex-direction: column;
     overflow: hidden;
   }
+
+  @media (max-width: 1100px) {
+    .agent-nav {
+      display: none;
+    }
+  }
 </style>
