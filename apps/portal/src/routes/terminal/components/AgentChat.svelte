@@ -28,6 +28,7 @@
   import { getPrivyAccessToken, privyAuth } from "$lib/privy-auth";
   import { llmProfileHeaderValue } from "$lib/agent/llm-profile-selection";
   import { projectPriceQuote } from "$lib/agent/price-presentation";
+  import type { AgentRunStatus } from "$lib/agent/run-visibility";
   import { isNearAgentTail } from "$lib/agent/scroll-policy";
   import {
     fetchAgentSkills,
@@ -53,6 +54,7 @@
     onExpand = undefined,
     onCollapse = undefined,
     onClose = undefined,
+    onRunStateChange = undefined,
     storage,
   }: {
     buildContext: () => Record<string, unknown>;
@@ -64,6 +66,7 @@
     onExpand?: () => void;
     onCollapse?: () => void;
     onClose?: () => void;
+    onRunStateChange?: (status: AgentRunStatus) => void;
     storage: AgentThreadStorage;
   } = $props();
 
@@ -147,6 +150,18 @@
             ? "Needs attention"
             : "Ready",
   );
+  $effect(() => {
+    const stopping =
+      conversation.cancellationState === "requested" ||
+      conversation.cancellationState === "cancelling";
+    onRunStateChange?.({
+      active: conversation.working || conversation.reconnecting || stopping,
+      canCancel: conversation.working && !stopping,
+      label: runLabel,
+      stopping,
+      cancel: () => conversation.cancel(),
+    });
+  });
   const pendingApprovalItems = $derived.by(() =>
     conversation.messages.flatMap((message) =>
       message.parts

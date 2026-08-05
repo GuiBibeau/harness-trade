@@ -97,10 +97,20 @@ export function createTurnCancellation(options: {
     emit();
   }
 
+  function resume(): void {
+    requested = false;
+    sentTurnId = undefined;
+    state = "idle";
+    error = undefined;
+    pending = null;
+    emit();
+  }
+
   return {
     observe,
     request,
     reset,
+    resume,
     settled: () => pending ?? Promise.resolve(),
     snapshot,
   };

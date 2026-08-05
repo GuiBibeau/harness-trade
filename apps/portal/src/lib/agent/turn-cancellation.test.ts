@@ -52,4 +52,27 @@ describe("turn cancellation", () => {
     expect(states).toEqual(["requested", "cancelling", "idle"]);
     expect(cancellation.snapshot()).toEqual({ state: "idle" });
   });
+
+  test("keeps the durable turn id when an approval resumes the same turn", async () => {
+    const calls: string[] = [];
+    const cancellation = createTurnCancellation({
+      cancel: async (turnId) => {
+        calls.push(turnId);
+      },
+    });
+
+    cancellation.observe({
+      type: "turn.started",
+      data: { turnId: "turn-awaiting-approval" },
+    });
+    cancellation.resume();
+    cancellation.request();
+    await cancellation.settled();
+
+    expect(calls).toEqual(["turn-awaiting-approval"]);
+    expect(cancellation.snapshot()).toMatchObject({
+      state: "cancelling",
+      turnId: "turn-awaiting-approval",
+    });
+  });
 });

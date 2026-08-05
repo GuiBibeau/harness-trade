@@ -306,7 +306,9 @@ export function createAgentConversation(options: AgentConversationOptions) {
   }
 
   function respond(requestId: string, approved: boolean): Promise<void> {
-    turnCancellation.reset();
+    // An input response resumes the parked durable turn. Keep its observed
+    // turn id so Stop can still cancel the resumed execution.
+    turnCancellation.resume();
     return eve.send({
       inputResponses: [{ requestId, optionId: approved ? "approve" : "deny" }],
     });

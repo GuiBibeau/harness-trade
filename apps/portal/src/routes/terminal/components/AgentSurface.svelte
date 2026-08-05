@@ -1,9 +1,8 @@
 <script lang="ts">
   import { browser } from "$app/environment";
   import type { AgentActionExecutor } from "$lib/agent/host";
-  import { scopeAgentStorage } from "$lib/agent/scoped-storage";
   import { privyAuth } from "$lib/privy-auth";
-  import AgentChat from "./AgentChat.svelte";
+  import AgentWorkspace from "./AgentWorkspace.svelte";
 
   let {
     buildContext,
@@ -29,13 +28,9 @@
 </script>
 
 {#if browser && $privyAuth.authenticated && $privyAuth.userId}
-  {@const scopeKey = `${$privyAuth.userId}:${accountMode}`}
-  {@const storage = scopeAgentStorage(localStorage, {
-    ownerId: $privyAuth.userId,
-    accountMode,
-  })}
-  {#key scopeKey}
-    <AgentChat
+  {#key $privyAuth.userId}
+    <AgentWorkspace
+      ownerId={$privyAuth.userId}
       {buildContext}
       {onRequestAuth}
       {accountMode}
@@ -45,7 +40,6 @@
       {onExpand}
       {onCollapse}
       {onClose}
-      {storage}
     />
   {/key}
 {:else}
