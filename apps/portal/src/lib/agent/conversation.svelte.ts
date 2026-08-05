@@ -95,6 +95,11 @@ export function createAgentConversation(options: AgentConversationOptions) {
   let paperActionReceipts = $state<Record<string, AgentPaperActionReceipt>>({
     ...(restoredThread?.paperActionReceipts ?? {}),
   });
+  let answeredToolCallIds = $state<Record<string, true>>(
+    Object.fromEntries(
+      (restoredThread?.answeredToolCallIds ?? []).map((callId) => [callId, true]),
+    ),
+  );
   const paperActionRuns = new Set<string>(
     restoredThread?.paperActionRuns ??
       Object.keys(restoredThread?.paperActionReceipts ?? {}),
@@ -111,7 +116,11 @@ export function createAgentConversation(options: AgentConversationOptions) {
     eve.status === "submitted" || eve.status === "streaming",
   );
   const busy = $derived(reconnecting || recoveryError.length > 0 || working);
-  const messages = $derived(eve.data.messages.map(projectConversationMessage));
+  const messages = $derived(
+    eve.data.messages.map((message) =>
+      projectConversationMessage(message, answeredToolCallIds),
+    ),
+  );
   const pendingRequestCount = $derived(
     messages.reduce(
       (count, message) =>
@@ -250,6 +259,7 @@ export function createAgentConversation(options: AgentConversationOptions) {
         thread: {
           session,
           events,
+          answeredToolCallIds: Object.keys(answeredToolCallIds),
           paperActionRuns: [...paperActionRuns],
           paperActionReceipts,
         },
@@ -282,7 +292,10 @@ export function createAgentConversation(options: AgentConversationOptions) {
 
   function send(message: string): Promise<void> {
     turnCancellation.reset();
-    if (conversationTitle === "New conversation") {
+    const hasUserMessage = eve.data.messages.some(
+      (conversationMessage) => conversationMessage.role === "user",
+    );
+    if (!hasUserMessage) {
       conversationTitle = titleFromMessage(message);
       persistCurrent();
     }
@@ -299,12 +312,26 @@ export function createAgentConversation(options: AgentConversationOptions) {
     });
   }
 
-  function respondToTool(toolCallId: string, approved: boolean): Promise<void> {
+  async function respondToTool(
+    toolCallId: string,
+    approved: boolean,
+  ): Promise<void> {
     const requestId = eve.data.messages
       .flatMap((message) => message.parts.filter(isDynamicToolPart))
       .find((part) => part.toolCallId === toolCallId)?.toolMetadata?.eve
       ?.inputRequest?.requestId;
-    return requestId ? respond(requestId, approved) : Promise.resolve();
+    if (!requestId || answeredToolCallIds[toolCallId]) return;
+    answeredToolCallIds = { ...answeredToolCallIds, [toolCallId]: true };
+    persistCurrent();
+    try {
+      await respond(requestId, approved);
+    } catch (error) {
+      const nextAnswered = { ...answeredToolCallIds };
+      delete nextAnswered[toolCallId];
+      answeredToolCallIds = nextAnswered;
+      persistCurrent();
+      throw error;
+    }
   }
 
   function newConversation(): void {
@@ -375,6 +402,9 @@ export function createAgentConversation(options: AgentConversationOptions) {
     activeConversationId = record.id;
     conversationTitle = record.title;
     paperActionReceipts = { ...(prepared.paperActionReceipts ?? {}) };
+    answeredToolCallIds = Object.fromEntries(
+      (prepared.answeredToolCallIds ?? []).map((callId) => [callId, true]),
+    );
     paperActionRuns.clear();
     for (const callId of prepared.paperActionRuns ?? []) {
       paperActionRuns.add(callId);
@@ -453,18 +483,24 @@ export function createAgentConversation(options: AgentConversationOptions) {
   };
 }
 
-function projectConversationMessage(message: {
-  role: string;
-  parts: readonly EveMessagePart[];
-}): AgentConversationMessage {
+function projectConversationMessage(
+  message: {
+    role: string;
+    parts: readonly EveMessagePart[];
+  },
+  answeredToolCallIds: Readonly<Record<string, true>>,
+): AgentConversationMessage {
   return {
     role: message.role,
-    parts: message.parts.flatMap(projectConversationPart),
+    parts: message.parts.flatMap((part) =>
+      projectConversationPart(part, answeredToolCallIds),
+    ),
   };
 }
 
 function projectConversationPart(
   part: EveMessagePart,
+  answeredToolCallIds: Readonly<Record<string, true>>,
 ): AgentConversationPart[] {
   if (part.type === "text") {
     return [{ type: "text", text: part.text }];
@@ -479,7 +515,9 @@ function projectConversationPart(
       input: part.input,
       output: part.output,
       ...(part.errorText ? { errorText: part.errorText } : {}),
-      approvalPending: Boolean(part.toolMetadata?.eve?.inputRequest),
+      approvalPending:
+        Boolean(part.toolMetadata?.eve?.inputRequest) &&
+        !answeredToolCallIds[part.toolCallId],
     },
   ];
 }

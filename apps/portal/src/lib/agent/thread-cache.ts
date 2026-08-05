@@ -7,6 +7,7 @@ export interface AgentThreadStorage {
 export interface AgentThreadSnapshot {
   session: unknown;
   events: readonly unknown[];
+  answeredToolCallIds?: readonly string[];
   paperActionRuns?: readonly string[];
   paperActionReceipts?: Record<string, AgentPaperActionReceipt>;
 }
@@ -35,6 +36,9 @@ export function loadAgentThread(
     return {
       session: current.session,
       events: current.events,
+      ...(isStringArray(current.answeredToolCallIds)
+        ? { answeredToolCallIds: current.answeredToolCallIds }
+        : {}),
       ...(Array.isArray(current.paperActionRuns)
         ? { paperActionRuns: current.paperActionRuns }
         : {}),
@@ -67,10 +71,15 @@ export function saveAgentThread(
       version: 2,
       session: thread.session,
       events: thread.events,
+      answeredToolCallIds: thread.answeredToolCallIds,
       paperActionRuns: thread.paperActionRuns,
       paperActionReceipts: thread.paperActionReceipts,
     }),
   );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function parseReceiptMap(

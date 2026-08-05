@@ -25,6 +25,7 @@ describe("agent thread cache", () => {
         { type: "user-message", id: "event-6", text: "Long SOL in paper mode" },
         { type: "assistant-message", id: "event-7", text: "Plan ready" },
       ],
+      answeredToolCallIds: ["approval-1"],
     };
 
     saveAgentThread(storage, thread);
