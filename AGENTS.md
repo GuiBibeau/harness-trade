@@ -2,19 +2,30 @@
 
 ## Current Scope
 
-- This repo is frontend-only.
-- The retained app is the SvelteKit dashboard UI in `apps/portal`.
-- The app uses read-only public market data plus the configured Harness
-  edge API where available. Public read routes should use plain
-  `/api/read/<routeKey>` APIs; auth-gated routes must be shown as gated rather
-  than replaced with fake rows.
-- Privy frontend auth is restored by explicit scope change and should stay
-  limited to browser-side authentication for account-gated edge reads.
-- Do not add or restore Cloudflare Worker, x402, database, payment, React/Next,
-  or live Solana execution behavior without another explicit scope change.
-- Paper trading is an allowed frontend-only simulation: local ledger on live
-  market data (perps + spot), no signing. Keep PAPER labeling obvious so it
-  never looks live.
+- The retained product is the SvelteKit portal in `apps/portal`, plus the Eve
+  agent under `apps/portal/agent` (durable chat, policy, and server-side
+  execution). There is no separate backend service repo in this tree.
+- Market data uses read-only public feeds plus the configured Harness edge API
+  where available. Public read routes should use plain `/api/read/<routeKey>`
+  APIs; auth-gated routes must be shown as gated rather than replaced with
+  fake rows.
+- Privy authenticates the user in the browser. Manual terminal LIVE tickets
+  sign with the Privy embedded Solana wallet. Eve live agent trades use a
+  separate **server-custody** wallet derived from
+  `AGENT_WALLET_MASTER_SECRET` + Privy principal (see
+  `docs/adr/0001-server-authoritative-trading-harness.md`). Never treat the
+  two wallets as the same account in UI or copy.
+- Live agent execution requires the server live-access record and an explicit
+  agent-wallet ack; live Auto always parks for user approval. SOL evacuate
+  from the agent wallet may only go to the Privy-linked owner address
+  (`/api/agent/custody-wallet`).
+- Do not add or restore Cloudflare Worker, x402, database, payment, or
+  React/Next surfaces without another explicit scope change. Expanding
+  custody (e.g. Privy delegated signing, program allowlists, durable PAUSE)
+  is in-scope only when the order/ADR says so — do not invent a new signer
+  path casually.
+- Paper trading is a local simulation on live market data (perps + spot), no
+  chain signing. Keep PAPER labeling obvious so it never looks live.
 
 ## Design System (packages/ui)
 
@@ -71,7 +82,7 @@
 - Promotion flow is `feature/*` or `codex/*` -> PR preview -> `main`.
 - `dev` remains available as an optional soak lane and is not a required
   promotion step.
-- Vercel is the only expected hosting target for the current frontend-only app.
+- Vercel is the only expected hosting target for the current portal + Eve app.
 - Do not manually remap custom domains outside CI unless production is degraded
   and an emergency fix is required.
 
