@@ -107,6 +107,7 @@
     PREFS_STORAGE_KEY,
     RAYS_PER_SYMBOL_CAP,
   } from "$lib/terminal/prefs";
+  import { isCurrentMarketGeneration } from "$lib/terminal/market-generation";
   import {
     PAPER_AUTHORITY,
     PAPER_STARTING_BALANCE,
@@ -790,6 +791,9 @@
   // changes asset/timeframe (out-of-order fetch protection). The quote-side
   // twin lives inside the spot ticket store.
   let spotChartSeq = 0;
+  // Same idea for Phoenix perps: late REST/WS for market A must not paint
+  // after the UI has switched to B (#567).
+  let phoenixMarketSeq = 0;
   // Spot ticket state (side/amount/order-type/limit) + the Jupiter quote
   // engine (debounce + generation tokens) live in $lib/terminal/spot-ticket.
   // The store reads the selected asset live and clears the last swap
@@ -2210,6 +2214,8 @@
       $tradeStopLoss = "";
       limitArmedUntil = 0;
     }
+    phoenixMarketSeq += 1;
+    const seq = phoenixMarketSeq;
     phoenixStream?.close();
     phoenixStream = null;
     selectedSymbol = symbol;
@@ -2236,13 +2242,25 @@
     // through the upsert into the cached/empty series; the snapshot merge
     // below keeps them instead of blind-replacing.
     const streamStartedAt = Date.now();
-    startPhoenixStream(symbol);
+    startPhoenixStream(symbol, seq);
 
     try {
       const snapshot = await fetchPhoenixInitialMarketData(
         symbol,
         selectedTimeframe,
       );
+      // Out-of-order protection: a slower snapshot for a previous market
+      // must not overwrite the current chart/preview (#567).
+      if (
+        !isCurrentMarketGeneration({
+          seq,
+          currentSeq: phoenixMarketSeq,
+          expectedSymbol: symbol,
+          selectedSymbol,
+        })
+      ) {
+        return;
+      }
       const historyEnd = snapshot.chartPoints.at(-1)?.ts ?? 0;
       // Live candles at or beyond the history boundary survive the merge —
       // including a same-period update to history's last candle: the stream
@@ -2270,6 +2288,16 @@
       marketSourceLabel = `${snapshot.source.provider} ${snapshot.source.symbol}`;
       streamHealth = "live";
     } catch {
+      if (
+        !isCurrentMarketGeneration({
+          seq,
+          currentSeq: phoenixMarketSeq,
+          expectedSymbol: symbol,
+          selectedSymbol,
+        })
+      ) {
+        return;
+      }
       streamHealth = latestPrice ? "stale" : "offline";
     }
   }
@@ -2293,22 +2321,52 @@
     marketSourceLabel = phoenixSource(selectedSymbol).displayPair;
   }
 
-  function startPhoenixStream(symbol: string): void {
+  function startPhoenixStream(symbol: string, seq: number): void {
     phoenixStream = connectPhoenixMarketStream(
       symbol,
       {
       onOpen: () => {
+        if (
+          !isCurrentMarketGeneration({
+            seq,
+            currentSeq: phoenixMarketSeq,
+            expectedSymbol: symbol,
+            selectedSymbol,
+          })
+        ) {
+          return;
+        }
         streamHealth = "live";
         // On reconnect, backfill candles missed while disconnected.
         if (chartPoints.length > 0) void healChartGaps(true);
       },
       onStatus: (status) => {
+        if (
+          !isCurrentMarketGeneration({
+            seq,
+            currentSeq: phoenixMarketSeq,
+            expectedSymbol: symbol,
+            selectedSymbol,
+          })
+        ) {
+          return;
+        }
         if (status === "streaming") streamHealth = "live";
         if (status === "connecting" || status === "reconnecting") {
           streamHealth = latestPrice ? "stale" : "connecting";
         }
       },
       onCandle: (point) => {
+        if (
+          !isCurrentMarketGeneration({
+            seq,
+            currentSeq: phoenixMarketSeq,
+            expectedSymbol: symbol,
+            selectedSymbol,
+          })
+        ) {
+          return;
+        }
         const livePrice = point.markClose ?? point.close;
         stampPaperExecutableMark(symbol, livePrice);
         chartPoints = upsertLiveCandle(chartPoints, point);
@@ -2319,10 +2377,32 @@
         streamHealth = "live";
       },
       onOrderbook: (payload) => {
+        if (
+          !isCurrentMarketGeneration({
+            seq,
+            currentSeq: phoenixMarketSeq,
+            expectedSymbol: symbol,
+            selectedSymbol,
+          })
+        ) {
+          return;
+        }
         stampPaperExecutableMark(symbol, payload.mid);
         pendingBook = payload;
         if (bookFrame) return;
         bookFrame = window.requestAnimationFrame(() => {
+          if (
+            !isCurrentMarketGeneration({
+              seq,
+              currentSeq: phoenixMarketSeq,
+              expectedSymbol: symbol,
+              selectedSymbol,
+            })
+          ) {
+            pendingBook = null;
+            bookFrame = 0;
+            return;
+          }
           if (pendingBook) {
             bids = pendingBook.bids;
             asks = pendingBook.asks;
@@ -2336,6 +2416,16 @@
         });
       },
       onMarket: (stats) => {
+        if (
+          !isCurrentMarketGeneration({
+            seq,
+            currentSeq: phoenixMarketSeq,
+            expectedSymbol: symbol,
+            selectedSymbol,
+          })
+        ) {
+          return;
+        }
         const livePrice = stats.markPx ?? stats.midPx;
         stampPaperExecutableMark(symbol, livePrice);
         marketStats = stats;
@@ -2345,16 +2435,46 @@
         streamHealth = "live";
       },
       onTrades: (nextTrades) => {
+        if (
+          !isCurrentMarketGeneration({
+            seq,
+            currentSeq: phoenixMarketSeq,
+            expectedSymbol: symbol,
+            selectedSymbol,
+          })
+        ) {
+          return;
+        }
         trades = nextTrades;
         lastMarketUpdate = Date.now();
       },
       onFunding: (funding) => {
+        if (
+          !isCurrentMarketGeneration({
+            seq,
+            currentSeq: phoenixMarketSeq,
+            expectedSymbol: symbol,
+            selectedSymbol,
+          })
+        ) {
+          return;
+        }
         marketStats = {
           ...(marketStats ?? emptyMarketStats(symbol)),
           funding,
         };
       },
       onAllMids: (mids) => {
+        if (
+          !isCurrentMarketGeneration({
+            seq,
+            currentSeq: phoenixMarketSeq,
+            expectedSymbol: symbol,
+            selectedSymbol,
+          })
+        ) {
+          return;
+        }
         stampPaperExecutableMids(mids);
         marketMids = mids;
         latestPrice = mids[symbol] ?? latestPrice;
@@ -2379,8 +2499,20 @@
     const now = Date.now();
     if (!force && now - lastChartHeal < 30_000) return;
     lastChartHeal = now;
+    const symbol = selectedSymbol;
+    const seq = phoenixMarketSeq;
     try {
-      const points = await fetchPhoenixCandles(selectedSymbol, selectedTimeframe);
+      const points = await fetchPhoenixCandles(symbol, selectedTimeframe);
+      if (
+        !isCurrentMarketGeneration({
+          seq,
+          currentSeq: phoenixMarketSeq,
+          expectedSymbol: symbol,
+          selectedSymbol,
+        })
+      ) {
+        return;
+      }
       if (points.length < 2) return;
       chartPoints = points;
       if (tradeMode === "perps") setChartData();
@@ -4361,7 +4493,7 @@
     streamHealth = "connecting";
     await probeRpc();
     if (tradeMode === "perps" && selectedSymbol) {
-      startPhoenixStream(selectedSymbol);
+      startPhoenixStream(selectedSymbol, phoenixMarketSeq);
     } else {
       void bootPhoenixMarketData();
     }
