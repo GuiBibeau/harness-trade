@@ -1248,6 +1248,7 @@
     prevDayHigh: tradeMode === "perps" ? structLevels.prevDayHigh : null,
     prevDayLow: tradeMode === "perps" ? structLevels.prevDayLow : null,
     symbol: selectedSymbol,
+    journalEntries,
   });
   $: perpTicket.setNow(nowMs);
 

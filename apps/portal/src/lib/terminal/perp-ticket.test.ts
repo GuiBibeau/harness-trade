@@ -35,6 +35,7 @@ function inputs(overrides: Partial<PerpTicketInputs> = {}): PerpTicketInputs {
     prevDayHigh: null,
     prevDayLow: null,
     symbol: "SOL",
+    journalEntries: [],
     ...overrides,
   };
 }
@@ -267,5 +268,65 @@ describe("ghost TP/SL", () => {
     ticket.tradeLimitPrice.set("100");
     expect(get(ticket.ghostTp)).toBeNull();
     expect(get(ticket.ghostSl)).toBeNull();
+  });
+});
+
+describe("ghost size/leverage", () => {
+  function journalSeed(count: number, symbol = "SOL") {
+    return Array.from({ length: count }, (_, index) => ({
+      ts: 1_700_000_000_000 + index,
+      venue: "perp" as const,
+      symbol,
+      action: "buy",
+      notionalUsd: 20 + index * 2,
+      price: 100,
+      leverage: index % 2 === 0 ? 5 : 5,
+      mode: "paper" as const,
+      signature: `sig-${index}`,
+    }));
+  }
+
+  test("≥5 journal entries → ghost; Tab accept sets amount + leverage", () => {
+    const ticket = createPerpTicket();
+    ticket.setInputs(inputs({ journalEntries: journalSeed(5) }));
+    ticket.tradeAmount.set("");
+    ticket.sizingMode.set("usd");
+    const ghost = get(ticket.ghostSize);
+    expect(ghost).not.toBeNull();
+    if (!ghost) throw new Error("expected ghost size");
+    expect(ghost.sampleSize).toBe(5);
+    expect(ticket.acceptGhostSize()).toBe(true);
+    expect(get(ticket.tradeAmount)).toBe(String(Math.round(ghost.notionalUsd)));
+    expect(get(ticket.tradeLeverage)).toBe(5);
+    expect(get(ticket.ghostSize)).toBeNull();
+  });
+
+  test("below floor or risk mode → no ghost", () => {
+    const ticket = createPerpTicket();
+    ticket.setInputs(inputs({ journalEntries: journalSeed(4) }));
+    ticket.tradeAmount.set("");
+    expect(get(ticket.ghostSize)).toBeNull();
+
+    ticket.setInputs(inputs({ journalEntries: journalSeed(6) }));
+    ticket.tradeAmount.set("");
+    ticket.sizingMode.set("risk");
+    expect(get(ticket.ghostSize)).toBeNull();
+  });
+
+  test("dismiss hides until symbol reset", () => {
+    const ticket = createPerpTicket();
+    ticket.setInputs(inputs({ journalEntries: journalSeed(5) }));
+    ticket.tradeAmount.set("");
+    expect(get(ticket.ghostSize)).not.toBeNull();
+    ticket.dismissGhostSize();
+    expect(get(ticket.ghostSize)).toBeNull();
+    ticket.setInputs(
+      inputs({
+        symbol: "BTC",
+        journalEntries: journalSeed(5, "BTC"),
+      }),
+    );
+    ticket.tradeAmount.set("");
+    expect(get(ticket.ghostSize)).not.toBeNull();
   });
 });
