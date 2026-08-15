@@ -3,6 +3,7 @@
   import { bookLevelNotional, formatBookPrice } from "$lib/terminal/book";
   import type { PerpTicket } from "$lib/terminal/perp-ticket";
   import { formatGhostSizeLabel } from "$lib/terminal/perp-ticket";
+  import { ghostFieldPlaceholder } from "$lib/terminal/ghost-field-placeholder";
   import { stepInput } from "$lib/terminal/step-input";
   import { SL_CHIP_PCTS, TP_CHIP_PCTS, fmtTriggerPrice } from "$lib/terminal/trade-math";
   import {
@@ -401,7 +402,10 @@
         <input
           bind:value={$tradeTakeProfit}
           inputmode="decimal"
-          placeholder="optional"
+          placeholder={ghostFieldPlaceholder({
+            hasGhost: Boolean($ghostTp),
+            emptyLabel: "optional",
+          })}
           use:stepInput={{ kind: "price" }}
           onkeydown={onTpKeydown}
         />
@@ -445,7 +449,10 @@
         <input
           bind:value={$tradeStopLoss}
           inputmode="decimal"
-          placeholder={$sizingMode === "risk" ? "required" : "optional"}
+          placeholder={ghostFieldPlaceholder({
+            hasGhost: Boolean($ghostSl),
+            emptyLabel: $sizingMode === "risk" ? "required" : "optional",
+          })}
           use:stepInput={{ kind: "price" }}
           onkeydown={onSlKeydown}
         />
