@@ -10,10 +10,13 @@
 // +page.svelte on purpose: this module holds state and pure math only, and
 // must never import web3.js or issue network calls.
 import { derived, get, writable } from "svelte/store";
+import type { JournalEntry } from "$lib/journal";
 import type { DepthLevel, MarketPoint } from "$lib/phoenix-market-data";
 import {
   GHOST_DEFAULTS,
+  type GhostSizing,
   type GhostValue,
+  ghostSizing,
   ghostStop,
   ghostTakeProfit,
 } from "./autocomplete";
@@ -49,6 +52,8 @@ export type PerpTicketInputs = {
   prevDayHigh: number | null;
   prevDayLow: number | null;
   symbol: string;
+  /** Local journal — size/leverage ghosts; page-injected, never loadJournal here. */
+  journalEntries: JournalEntry[];
 };
 
 type MarketInputs = Pick<
@@ -65,8 +70,27 @@ type AccountInputs = Pick<
 >;
 type StructureInputs = Pick<
   PerpTicketInputs,
-  "candles" | "prevDayHigh" | "prevDayLow" | "symbol"
+  "candles" | "prevDayHigh" | "prevDayLow" | "symbol" | "journalEntries"
 >;
+
+const TICKET_LEVERAGES = [1, 2, 5, 10, 20] as const;
+
+/** Snap journal modal leverage onto the ticket <select> options. */
+export function snapTicketLeverage(value: number): number {
+  let best: (typeof TICKET_LEVERAGES)[number] = TICKET_LEVERAGES[0];
+  for (const option of TICKET_LEVERAGES) {
+    if (Math.abs(option - value) < Math.abs(best - value)) best = option;
+  }
+  return best;
+}
+
+export function formatGhostSizeLabel(ghost: GhostSizing): string {
+  const notional =
+    ghost.notionalUsd >= 10
+      ? Math.round(ghost.notionalUsd)
+      : Math.round(ghost.notionalUsd * 100) / 100;
+  return `$${notional} @ ${snapTicketLeverage(ghost.leverage)}x`;
+}
 
 export function createPerpTicket() {
   // ── User-editable fields (three external writers besides the inputs:
@@ -109,14 +133,17 @@ export function createPerpTicket() {
     prevDayHigh: null,
     prevDayLow: null,
     symbol: "",
+    journalEntries: [],
   });
   const now = writable(0);
   const ghostTpDismissed = writable(false);
   const ghostSlDismissed = writable(false);
+  const ghostSizeDismissed = writable(false);
 
   function clearGhostDismissed(): void {
     ghostTpDismissed.set(false);
     ghostSlDismissed.set(false);
+    ghostSizeDismissed.set(false);
   }
 
   // Side flips via bind ($tradeSide = …) bypass setSide — subscribe so
@@ -179,7 +206,8 @@ export function createPerpTicket() {
       prev.candles !== next.candles ||
       prev.prevDayHigh !== next.prevDayHigh ||
       prev.prevDayLow !== next.prevDayLow ||
-      prev.symbol !== next.symbol
+      prev.symbol !== next.symbol ||
+      prev.journalEntries !== next.journalEntries
     ) {
       if (prev && prev.symbol !== next.symbol) {
         clearGhostDismissed();
@@ -189,6 +217,7 @@ export function createPerpTicket() {
         prevDayHigh: next.prevDayHigh,
         prevDayLow: next.prevDayLow,
         symbol: next.symbol,
+        journalEntries: next.journalEntries,
       });
     }
   }
@@ -395,6 +424,19 @@ export function createPerpTicket() {
   );
   const ghostSymbol = derived(structure, ($structure) => $structure.symbol);
 
+  // Ghost size/leverage from journal — USD sizing only, empty field, ≥5 samples.
+  const ghostSize = derived(
+    [sizingMode, tradeAmount, ghostSizeDismissed, structure],
+    ([$mode, $amount, $dismissed, $structure]): GhostSizing | null => {
+      if ($dismissed || $mode !== "usd" || $amount.trim() !== "") return null;
+      return ghostSizing(
+        $structure.journalEntries,
+        $structure.symbol,
+        GHOST_DEFAULTS.sizingMinSample,
+      );
+    },
+  );
+
   // Clicking a book level: prefill a limit order at that price. Side/type/
   // price only — size/TP/SL stay put.
   function prefill(price: number, side: TradeSide): void {
@@ -445,12 +487,28 @@ export function createPerpTicket() {
     return true;
   }
 
+  function acceptGhostSize(): boolean {
+    const ghost = get(ghostSize);
+    if (!ghost) return false;
+    const notional =
+      ghost.notionalUsd >= 10
+        ? Math.round(ghost.notionalUsd)
+        : Math.round(ghost.notionalUsd * 100) / 100;
+    tradeAmount.set(String(notional));
+    tradeLeverage.set(snapTicketLeverage(ghost.leverage));
+    return true;
+  }
+
   function dismissGhostTp(): void {
     ghostTpDismissed.set(true);
   }
 
   function dismissGhostSl(): void {
     ghostSlDismissed.set(true);
+  }
+
+  function dismissGhostSize(): void {
+    ghostSizeDismissed.set(true);
   }
 
   return {
@@ -483,6 +541,7 @@ export function createPerpTicket() {
     effectiveTradeAmount,
     ghostTp,
     ghostSl,
+    ghostSize,
     ghostSymbol,
     // api
     setInputs,
@@ -493,8 +552,10 @@ export function createPerpTicket() {
     setStopLossPct,
     acceptGhostTp,
     acceptGhostSl,
+    acceptGhostSize,
     dismissGhostTp,
     dismissGhostSl,
+    dismissGhostSize,
   };
 }
 

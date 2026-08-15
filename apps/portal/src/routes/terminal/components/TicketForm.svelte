@@ -2,6 +2,7 @@
   import type { DepthLevel } from "$lib/phoenix-market-data";
   import { bookLevelNotional, formatBookPrice } from "$lib/terminal/book";
   import type { PerpTicket } from "$lib/terminal/perp-ticket";
+  import { formatGhostSizeLabel } from "$lib/terminal/perp-ticket";
   import { stepInput } from "$lib/terminal/step-input";
   import { SL_CHIP_PCTS, TP_CHIP_PCTS, fmtTriggerPrice } from "$lib/terminal/trade-math";
   import {
@@ -154,18 +155,22 @@
     riskNotionalUsd,
     ghostTp,
     ghostSl,
+    ghostSize,
     ghostSymbol,
     setTakeProfitPct,
     setStopLossPct,
     acceptGhostTp,
     acceptGhostSl,
+    acceptGhostSize,
     dismissGhostTp,
     dismissGhostSl,
+    dismissGhostSize,
   } = ticket;
 
   // Telemetry: once per ghost value per field (not per render).
   let shownTpKey = "";
   let shownSlKey = "";
+  let shownSizeKey = "";
   $effect(() => {
     const ghost = $ghostTp;
     const symbol = $ghostSymbol;
@@ -189,6 +194,18 @@
     if (key === shownSlKey) return;
     shownSlKey = key;
     track("ghost_shown", { field: "sl", source: ghost.source, symbol });
+  });
+  $effect(() => {
+    const ghost = $ghostSize;
+    const symbol = $ghostSymbol;
+    if (!ghost) {
+      shownSizeKey = "";
+      return;
+    }
+    const key = `${symbol}:journal:${ghost.sampleSize}:${ghost.notionalUsd}:${ghost.leverage}`;
+    if (key === shownSizeKey) return;
+    shownSizeKey = key;
+    track("ghost_shown", { field: "size", source: "journal", symbol });
   });
 
   function onTpKeydown(event: KeyboardEvent): void {
@@ -231,6 +248,24 @@
     }
   }
 
+  function onSizeKeydown(event: KeyboardEvent): void {
+    if (event.key === "Tab" && !event.shiftKey && $ghostSize) {
+      event.preventDefault();
+      const symbol = $ghostSymbol;
+      if (acceptGhostSize()) {
+        track("ghost_accepted", { field: "size", source: "journal", symbol });
+      }
+      return;
+    }
+    if (event.key === "Escape" && $ghostSize) {
+      event.preventDefault();
+      event.stopPropagation();
+      const symbol = $ghostSymbol;
+      dismissGhostSize();
+      track("ghost_dismissed", { field: "size", source: "journal", symbol });
+    }
+  }
+
   // ── Size presets ───────────────────────────────────────────────────
   // USD mode: % of free collateral × leverage; Max keeps the same $0.01
   // margin buffer the funding gate tolerates so a Max ticket can't flash
@@ -258,13 +293,23 @@
         >{$sizingMode === "usd" ? "from stop →" : "← plain size"}</button>
       </span>
       {#if $sizingMode === "usd"}
-        <input
-          bind:this={sizeInput}
-          bind:value={$tradeAmount}
-          inputmode="decimal"
-          use:stepInput={{ kind: "usd" }}
-          oninput={() => onmanualsize()}
-        />
+        <span class="ghost-input">
+          <input
+            bind:this={sizeInput}
+            bind:value={$tradeAmount}
+            inputmode="decimal"
+            use:stepInput={{ kind: "usd" }}
+            oninput={() => onmanualsize()}
+            onkeydown={onSizeKeydown}
+          />
+          {#if $ghostSize}
+            <span
+              class="ghost-overlay"
+              aria-hidden="true"
+              title={$ghostSize.provenance}
+            >{formatGhostSizeLabel($ghostSize)}</span>
+          {/if}
+        </span>
       {:else}
         <input
           bind:this={sizeInput}
