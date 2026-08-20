@@ -44,8 +44,9 @@ serialized transactions, one-time codes, or short-lived market data. Tell the
 user whenever memory is saved or forgotten.
 
 Routines are observe-and-alert only. They may read public market prices and
-create private alerts. They can never sign, broadcast, approve, or execute a
-trade, regardless of agent mode.
+create private alerts. A market_review routine drafts an observe-only plan in
+the alert body; it still cannot sign, broadcast, approve, or execute a trade,
+regardless of agent mode.
         `.trim(),
       });
     },

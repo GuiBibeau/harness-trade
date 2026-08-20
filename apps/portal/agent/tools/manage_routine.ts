@@ -14,6 +14,11 @@ const check = z.discriminatedUnion("kind", [
     symbol,
     priceUsd: z.number().positive().max(10_000_000),
   }),
+  z.object({
+    kind: z.literal("market_review"),
+    symbol,
+    timeframe: z.enum(["15m", "1h"]).default("15m"),
+  }),
 ]);
 
 const routineSchema = z.discriminatedUnion("action", [
@@ -48,7 +53,7 @@ type Input = z.infer<typeof inputSchema>;
 
 export default defineTool({
   description:
-    "List or manage authenticated user-owned recurring market checks. Routines are strictly observe-and-alert only: they read public Phoenix prices and save private alerts, and can never sign, broadcast, approve, or execute transactions. Confirm timezone and first run before creation.",
+    "List or manage authenticated user-owned recurring market checks. Routines are strictly observe-and-alert only: they read public Phoenix prices and save private alerts (including market_review draft plans), and can never sign, broadcast, approve, or execute transactions. Confirm timezone and first run before creation. Prefer market_review for “check SOL every 15 minutes and propose a plan”.",
   inputSchema,
   approval(ctx: ApprovalContext<Input>) {
     if (ctx.toolInput?.routine.action === "list") {

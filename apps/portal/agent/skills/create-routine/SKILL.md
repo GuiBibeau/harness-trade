@@ -75,7 +75,9 @@ Context Mutation. Present both explicitly before persistence.
 
 Examples:
 
-- “Review SOL every 15 minutes” creates an Observation-and-Artifact Routine.
+- “Review SOL every 15 minutes” creates a `market_review` Observation Routine
+  that writes a private alert with an observe-only draft plan (bias, range,
+  invalidation). It never executes.
 - “Alert below 25% margin health” creates an edge-triggered alert Routine that
   avoids repeating the same alert until the condition clears and crosses again.
 - “Manage SOL until invalidated” requires a Routine plus a bounded Mandate and

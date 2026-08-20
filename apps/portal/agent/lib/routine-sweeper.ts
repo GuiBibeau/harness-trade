@@ -10,12 +10,18 @@ import type {
   RoutineObservation,
   RoutineRun,
 } from "./persistent-types";
+import {
+  buildMarketReviewPlan,
+  type CandleClose,
+  formatMarketReviewAlertBody,
+} from "./routine-review";
 import { ROUTINE_ROOT, routinePath, routineStore } from "./routine-store";
 
 const MAX_SCAN = 200;
 const MAX_CLAIMS = 12;
 const LEASE_MS = 4 * 60_000;
 const CURSOR_PATH = "agent-state/v1/system/routine-sweep-cursor.json";
+const REVIEW_CANDLE_LIMIT = 24;
 
 type SweepCursor = { cursor: string | null; updatedAt: string };
 type Claimed = { routine: ObserveRoutine; leaseToken: string };
@@ -73,11 +79,15 @@ async function claim(pathname: string, now: Date): Promise<Claimed | null> {
   }
 }
 
-async function marketPrice(symbol: string): Promise<RoutineObservation> {
+async function fetchCandles(
+  symbol: string,
+  timeframe: string,
+  limit: number,
+): Promise<CandleClose[]> {
   const query = new URLSearchParams({
     symbol,
-    timeframe: "1m",
-    limit: "2",
+    timeframe,
+    limit: String(limit),
   });
   const response = await fetch(
     `https://perp-api.phoenix.trade/candles?${query}`,
@@ -88,17 +98,35 @@ async function marketPrice(symbol: string): Promise<RoutineObservation> {
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error("routine-market-malformed");
   }
-  const latest = rows.at(-1);
-  const price =
-    typeof latest === "object" && latest !== null
-      ? Number((latest as Record<string, unknown>).close)
-      : NaN;
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new Error("routine-market-price-invalid");
+  const candles: CandleClose[] = [];
+  for (const row of rows) {
+    if (typeof row !== "object" || row === null) continue;
+    const record = row as Record<string, unknown>;
+    const high = Number(record.high);
+    const low = Number(record.low);
+    const close = Number(record.close);
+    if (
+      Number.isFinite(high) &&
+      Number.isFinite(low) &&
+      Number.isFinite(close) &&
+      high > 0 &&
+      low > 0 &&
+      close > 0
+    ) {
+      candles.push({ high, low, close });
+    }
   }
+  if (candles.length === 0) throw new Error("routine-market-price-invalid");
+  return candles;
+}
+
+async function marketPrice(symbol: string): Promise<RoutineObservation> {
+  const candles = await fetchCandles(symbol, "1m", 2);
+  const latest = candles.at(-1);
+  if (!latest) throw new Error("routine-market-price-invalid");
   return {
     symbol,
-    priceUsd: price,
+    priceUsd: latest.close,
     observedAt: new Date().toISOString(),
     source: "phoenix-public-candles",
   };
@@ -108,6 +136,43 @@ async function observe(routine: ObserveRoutine): Promise<{
   observations: RoutineObservation[];
   alert: RoutineAlert | null;
 }> {
+  if (routine.check.kind === "market_review") {
+    const timeframe = routine.check.timeframe;
+    const candles = await fetchCandles(
+      routine.check.symbol,
+      timeframe,
+      REVIEW_CANDLE_LIMIT,
+    );
+    const plan = buildMarketReviewPlan({
+      symbol: routine.check.symbol,
+      timeframe,
+      candles,
+    });
+    const observation: RoutineObservation = {
+      symbol: routine.check.symbol,
+      priceUsd: plan.lastClose,
+      observedAt: new Date().toISOString(),
+      source: "phoenix-public-candles",
+    };
+    const scheduledFor = routine.lease?.scheduledFor ?? routine.nextRunAt;
+    const runId = `${routine.id}:${scheduledFor}`;
+    return {
+      observations: [observation],
+      alert: {
+        id: runId,
+        ownerId: routine.ownerId,
+        routineId: routine.id,
+        routineRunId: runId,
+        severity: "info",
+        title: `${routine.name} · ${plan.bias}`,
+        body: formatMarketReviewAlertBody(plan),
+        evidence: [observation],
+        status: "unread",
+        createdAt: scheduledFor,
+      },
+    };
+  }
+
   const symbols =
     routine.check.kind === "market_snapshot"
       ? routine.check.symbols
