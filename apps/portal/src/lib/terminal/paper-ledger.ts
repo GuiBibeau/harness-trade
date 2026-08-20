@@ -115,6 +115,10 @@ export type PaperEvent = {
   leverage: number | null;
   realizedPnlUsd: number;
   signature: string;
+  /** Set on close/tp/sl/liq for post-mortem R math. */
+  entryPrice?: number | null;
+  stopLossPrice?: number | null;
+  takeProfitPrice?: number | null;
 };
 
 export type PaperSpotMarketInput = {
@@ -735,6 +739,9 @@ function closePositionSeed(
       price,
       leverage: null,
       realizedPnlUsd: pnl,
+      entryPrice: position.entryPrice,
+      stopLossPrice: position.stopLossPrice,
+      takeProfitPrice: position.takeProfitPrice,
     },
   };
 }
@@ -1341,6 +1348,9 @@ export function tickPaperLedger(
           price: mid,
           leverage: lev,
           realizedPnlUsd: -margin,
+          entryPrice: position.entryPrice,
+          stopLossPrice: position.stopLossPrice,
+          takeProfitPrice: position.takeProfitPrice,
         });
         continue;
       }

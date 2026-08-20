@@ -22,6 +22,12 @@ export type RoutineCheck =
       kind: "price_above" | "price_below";
       symbol: string;
       priceUsd: number;
+    }
+  | {
+      /** Recurring observe-only market review that drafts a plan Artifact text. */
+      kind: "market_review";
+      symbol: string;
+      timeframe: "15m" | "1h";
     };
 
 export type ObserveRoutine = {

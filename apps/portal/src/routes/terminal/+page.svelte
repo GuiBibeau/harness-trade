@@ -31,6 +31,7 @@
     aiFundingRead,
     aiPositionBrief,
     aiSessionRecap,
+    aiTradePostMortem,
     aiParseCommand,
     aiScannerSetups,
     IDLE_READ,
@@ -238,6 +239,15 @@
     recordTrade,
     type JournalEntry,
   } from "$lib/journal";
+  import {
+    buildClosedTradeReview,
+    clearPostMortems,
+    loadPostMortems,
+    recordPostMortem,
+    type ClosedTradeReview,
+    type PostMortemExitReason,
+    type PostMortemSide,
+  } from "$lib/postmortem";
   import {
     cancelTriggerOrder,
     createTriggerOrder,
@@ -829,6 +839,8 @@
   let screenHub: "all" | "crypto" | "equities" | "pre-ipo" = "all";
   // Local-first trade journal + AI desk notes over it.
   let journalEntries: JournalEntry[] = [];
+  let postMortems: ClosedTradeReview[] = [];
+  let postMortemRead: AiRead = IDLE_READ;
   let briefRead: AiRead = IDLE_READ;
   let recapRead: AiRead = IDLE_READ;
   let briefKey = "";
@@ -1994,6 +2006,7 @@
     applyDeepLink(); // ?asset=&venue=&side=… — overrides restored prefs
     alertsStore.load({ trackContext: marketContext });
     journalEntries = loadJournal();
+    postMortems = loadPostMortems();
     loadLayout();
     const panelsWarm = hydrateWidgetCache();
     prefsReady = true;
@@ -3523,6 +3536,11 @@
         event.kind === "spot_buy" ||
         event.kind === "spot_sell" ||
         event.kind === "spot_limit_fill";
+      const isClose =
+        event.kind === "close" ||
+        event.kind === "tp" ||
+        event.kind === "sl" ||
+        event.kind === "liq";
       noteTrade({
         ts: Date.now(),
         mode: "paper",
@@ -3536,10 +3554,7 @@
             : event.kind === "spot_limit_fill"
               ? "limit-sell"
               : "sell"
-          : event.kind === "close" ||
-              event.kind === "tp" ||
-              event.kind === "sl" ||
-              event.kind === "liq"
+          : isClose
             ? "close"
             : event.side === "bid"
               ? "long"
@@ -3549,6 +3564,31 @@
         leverage: event.leverage,
         signature: event.signature,
       });
+      if (isClose) {
+        const exitReason: PostMortemExitReason =
+          event.kind === "tp"
+            ? "tp"
+            : event.kind === "sl"
+              ? "sl"
+              : event.kind === "liq"
+                ? "liq"
+                : "manual";
+        // Close side is the flatten side: ask closes a long, bid closes a short.
+        const side: PostMortemSide = event.side === "ask" ? "long" : "short";
+        noteClosedTrade({
+          mode: "paper",
+          symbol: event.symbol,
+          side,
+          entryPrice: event.entryPrice ?? null,
+          exitPrice: event.price,
+          stopLossPrice: event.stopLossPrice ?? null,
+          takeProfitPrice: event.takeProfitPrice ?? null,
+          notionalUsd: event.notionalUsd,
+          realizedPnlUsd: event.realizedPnlUsd,
+          exitReason,
+          signature: event.signature,
+        });
+      }
       if (event.kind === "tp" || event.kind === "sl" || event.kind === "liq") {
         alertsStore.pushToast({
           ts: Date.now(),
@@ -4038,25 +4078,23 @@
         expectedLiveExecutionEpoch,
         busyKey,
       );
-      {
-        const closing = enrichedPositions.find(
-          (position) => position.symbol === symbol,
-        );
-        track(partial ? "position_partial_close" : "position_closed", {
-          ...marketContext(),
-          closedSymbol: symbol,
-          size,
-          ...(partial ? { fraction } : {}),
-          entryPrice: closing?.entryPrice ?? null,
-          realizedUpnlEst: closing?.unrealizedPnl ?? null,
-          marginUsd: closing?.marginUsd ?? null,
-          roePct:
-            closing?.unrealizedPnl != null && closing?.marginUsd
-              ? (closing.unrealizedPnl / closing.marginUsd) * 100
-              : null,
-          signature: lastTradeSignature,
-        });
-      }
+      const closing = enrichedPositions.find(
+        (position) => position.symbol === symbol,
+      );
+      track(partial ? "position_partial_close" : "position_closed", {
+        ...marketContext(),
+        closedSymbol: symbol,
+        size,
+        ...(partial ? { fraction } : {}),
+        entryPrice: closing?.entryPrice ?? null,
+        realizedUpnlEst: closing?.unrealizedPnl ?? null,
+        marginUsd: closing?.marginUsd ?? null,
+        roePct:
+          closing?.unrealizedPnl != null && closing?.marginUsd
+            ? (closing.unrealizedPnl / closing.marginUsd) * 100
+            : null,
+        signature: lastTradeSignature,
+      });
       noteTrade({
         ts: Date.now(),
         mode: "live",
@@ -4068,6 +4106,23 @@
         leverage: null,
         signature: lastTradeSignature,
       });
+      if (!partial && closing) {
+        noteClosedTrade({
+          mode: "live",
+          symbol,
+          side: size > 0 ? "long" : "short",
+          entryPrice: closing.entryPrice,
+          exitPrice: marketMids[symbol] ?? null,
+          stopLossPrice: closing.stopLossPrice,
+          takeProfitPrice: closing.takeProfitPrice,
+          notionalUsd: marketMids[symbol]
+            ? Math.abs(size) * marketMids[symbol]
+            : closing.positionValue,
+          realizedPnlUsd: closing.unrealizedPnl,
+          exitReason: "manual",
+          signature: lastTradeSignature,
+        });
+      }
       if (partial) {
         // TP/SL are position-level triggers — a partial close leaves them
         // armed on the remainder; say so instead of letting traders wonder.
@@ -4617,6 +4672,21 @@
               : null,
             price: marketMids[position.symbol] ?? null,
             leverage: null,
+            signature: lastTradeSignature,
+          });
+          noteClosedTrade({
+            mode: "live",
+            symbol: position.symbol,
+            side: position.size > 0 ? "long" : "short",
+            entryPrice: position.entryPrice,
+            exitPrice: marketMids[position.symbol] ?? null,
+            stopLossPrice: position.stopLossPrice,
+            takeProfitPrice: position.takeProfitPrice,
+            notionalUsd: marketMids[position.symbol]
+              ? Math.abs(position.size) * marketMids[position.symbol]
+              : position.positionValue,
+            realizedPnlUsd: position.unrealizedPnl,
+            exitReason: "manual",
             signature: lastTradeSignature,
           });
         }
@@ -6031,11 +6101,67 @@
     journalEntries = recordTrade(entry);
   }
 
+  function noteClosedTrade(input: {
+    mode: "live" | "paper";
+    symbol: string;
+    side: PostMortemSide;
+    entryPrice: number | null;
+    exitPrice: number | null;
+    stopLossPrice: number | null;
+    takeProfitPrice: number | null;
+    notionalUsd: number | null;
+    realizedPnlUsd: number | null;
+    exitReason: PostMortemExitReason;
+    signature: string;
+  }): void {
+    const review = buildClosedTradeReview({
+      ts: Date.now(),
+      ...input,
+    });
+    postMortems = recordPostMortem(review);
+    alertsStore.pushToast({
+      ts: Date.now(),
+      title: "Post-mortem",
+      body: review.summary,
+    });
+    void runTradePostMortem(review);
+  }
+
   function wipeJournal(): void {
     clearJournal();
+    clearPostMortems();
     journalEntries = [];
+    postMortems = [];
     recapRead = IDLE_READ;
+    postMortemRead = IDLE_READ;
     recapKey = 0;
+  }
+
+  async function runTradePostMortem(review: ClosedTradeReview): Promise<void> {
+    if (aiDisabled()) return;
+    const snapshot = {
+      symbol: review.symbol,
+      side: review.side,
+      mode: review.mode,
+      entryPrice: review.entryPrice,
+      exitPrice: review.exitPrice,
+      stopLossPrice: review.stopLossPrice,
+      takeProfitPrice: review.takeProfitPrice,
+      realizedPnlUsd: review.realizedPnlUsd,
+      rMultiple: review.rMultiple,
+      exitReason: review.exitReason,
+      summary: review.summary,
+    };
+    postMortemRead = { phase: "loading", text: postMortemRead.text };
+    try {
+      postMortemRead = {
+        phase: "ready",
+        asOf: Date.now(),
+        text: await aiTradePostMortem(snapshot, review.mode === "paper"),
+      };
+    } catch (error) {
+      postMortemRead = { phase: "error", text: "", error: aiErr(error) };
+    }
   }
 
   async function runPositionBrief(): Promise<void> {
@@ -7091,6 +7217,10 @@
             displayTimezone={displayTimezone}
             {journalEntries}
             {journalToday}
+            postMortems={postMortems.filter(
+              (row) => row.mode === (paperMode ? "paper" : "live"),
+            )}
+            postMortemRead={harnessCompact ? IDLE_READ : postMortemRead}
             recapRead={viewRecapRead}
             {sessionPnlUsd}
             onwipe={wipeJournal}

@@ -46,6 +46,14 @@ function validateCheck(check: RoutineCheck): RoutineCheck {
     if (symbols.length === 0) throw new Error("routine-symbols-required");
     return { kind: check.kind, symbols };
   }
+  if (check.kind === "market_review") {
+    const timeframe = check.timeframe === "1h" ? "1h" : "15m";
+    return {
+      kind: "market_review",
+      symbol: normalizeSymbol(check.symbol),
+      timeframe,
+    };
+  }
   if (!Number.isFinite(check.priceUsd) || check.priceUsd <= 0) {
     throw new Error("routine-price-invalid");
   }

@@ -139,6 +139,22 @@ export async function aiSessionRecap(
   });
 }
 
+export async function aiTradePostMortem(
+  snapshot: unknown,
+  paper = false,
+): Promise<string> {
+  const user = JSON.stringify(snapshot);
+  const book = paper
+    ? "One SIMULATED paper trade that just closed (not real funds)"
+    : "One trade that just closed";
+  return complete({
+    system: ANALYST_SYSTEM,
+    user: `${book}. Write a 1-2 sentence post-mortem from the facts only: what happened vs the recorded stop/TP when present, the R-multiple when known, and one concrete observation about the exit. No advice, no new thesis.\n\n${user}`,
+    cacheKey: `postmortem:${paper ? "paper:" : ""}${hash(user)}`,
+    maxTokens: 110,
+  });
+}
+
 export async function aiFundingRead(snapshot: unknown): Promise<string> {
   const user = JSON.stringify(snapshot);
   return complete({

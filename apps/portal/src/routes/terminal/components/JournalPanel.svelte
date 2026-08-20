@@ -1,6 +1,10 @@
 <script lang="ts">
-  import type { AiRead } from "$lib/ai";
+  import { IDLE_READ, type AiRead } from "$lib/ai";
   import { journalToCsv, type JournalEntry } from "$lib/journal";
+  import {
+    formatRMultiple,
+    type ClosedTradeReview,
+  } from "$lib/postmortem";
   import { panelStyle, usePanelLayout } from "$lib/terminal/layout";
   import {
     formatTimeHmInZone,
@@ -13,6 +17,8 @@
   let {
     journalEntries,
     journalToday,
+    postMortems = [],
+    postMortemRead = IDLE_READ,
     recapRead,
     sessionPnlUsd,
     displayTimezone = "UTC",
@@ -20,6 +26,8 @@
   }: {
     journalEntries: JournalEntry[];
     journalToday: JournalEntry[];
+    postMortems?: ClosedTradeReview[];
+    postMortemRead?: AiRead;
     recapRead: AiRead;
     /** Day P&L from the equity baseline — null when no wallet/history. */
     sessionPnlUsd: number | null;
@@ -62,7 +70,7 @@
 >
   <div class="panel-head">
     <DragHead panelId="journal" kicker="JOURNAL" title={`${journalToday.length} today · ${journalEntries.length} total`} />
-    {#if journalEntries.length > 0}
+    {#if journalEntries.length > 0 || postMortems.length > 0}
       <button class="row-action" type="button" onclick={exportJournalCsv}>CSV</button>
       <button class="row-action" type="button" onclick={onwipe}>Clear</button>
     {/if}
@@ -89,6 +97,26 @@
   </div>
   {#if journalToday.length >= 2}
     <AiReadLine read={recapRead} />
+  {/if}
+  {#if postMortems.length > 0}
+    <div class="postmortem-block">
+      <div class="postmortem-kicker">POST-MORTEMS</div>
+      {#if postMortemRead.phase !== "idle"}
+        <AiReadLine read={postMortemRead} />
+      {/if}
+      {#each [...postMortems].reverse().slice(0, 6) as review (review.id)}
+        <div class="postmortem-row">
+          <span class="journal-time">{formatTimeHmInZone(review.ts, displayTimezone)}</span>
+          <span class="journal-sym">{review.symbol}</span>
+          <span
+            class="journal-action"
+            class:positive={review.realizedPnlUsd !== null && review.realizedPnlUsd >= 0}
+            class:negative={review.realizedPnlUsd !== null && review.realizedPnlUsd < 0}
+          >{formatRMultiple(review.rMultiple)}</span>
+          <span class="postmortem-summary">{review.summary}</span>
+        </div>
+      {/each}
+    </div>
   {/if}
   <div class="journal-list">
     {#each [...journalEntries].reverse().slice(0, 12) as entry (entry.ts)}
@@ -136,6 +164,33 @@
   }
   .session-strip .up b { color: var(--up); }
   .session-strip .down b { color: var(--down); }
+  .postmortem-block {
+    padding: 0.4rem 0 0.2rem;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .postmortem-kicker {
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+    margin-bottom: 0.2rem;
+  }
+  .postmortem-row {
+    display: grid;
+    grid-template-columns: 2.6rem 2.4rem 3.2rem minmax(0, 1fr);
+    gap: 0.45rem;
+    align-items: baseline;
+    padding: 0.28rem 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .postmortem-summary {
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .journal-list { display: grid; }
   .journal-row {
     display: grid;
