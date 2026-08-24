@@ -787,6 +787,55 @@ export async function buildPlaceOrderPlan(
   };
 }
 
+/**
+ * One signing ceremony: reduce-only close of the open side, then a fresh
+ * opposite market open at the same base size / margin. Callers must simulate
+ * the concatenated list before broadcast.
+ */
+export async function buildReversePositionPlan(input: {
+  authority: string;
+  position: PhoenixPosition;
+  markPrice: number;
+}): Promise<PlacedOrderPlan> {
+  const { authority, position, markPrice } = input;
+  if (!(Math.abs(position.size) > 0)) {
+    throw new Error("No position to reverse");
+  }
+  if (!(markPrice > 0)) {
+    throw new Error("Mark price unavailable for reverse");
+  }
+  const quantity = Math.abs(position.size);
+  const closeSide: PhoenixSide = position.size > 0 ? "ask" : "bid";
+  const openSide: PhoenixSide = position.size > 0 ? "ask" : "bid";
+  // Close is reduce-only opposite the position; open is the same close-side
+  // direction as a fresh entry (long→short uses ask for both legs).
+  const closePlan = await buildPlaceOrderPlan({
+    authority,
+    symbol: position.symbol,
+    side: closeSide,
+    orderType: "market",
+    quantity,
+    reduceOnly: true,
+  });
+  const marginUsd =
+    position.marginUsd !== null && position.marginUsd > 0
+      ? position.marginUsd
+      : (quantity * markPrice) / 5;
+  const openPlan = await buildPlaceOrderPlan({
+    authority,
+    symbol: position.symbol,
+    side: openSide,
+    orderType: "market",
+    quantity,
+    marginUsd,
+    reduceOnly: false,
+  });
+  return {
+    instructions: [...closePlan.instructions, ...openPlan.instructions],
+    estimatedLiquidationPriceUsd: openPlan.estimatedLiquidationPriceUsd,
+  };
+}
+
 // ── Cancel ────────────────────────────────────────────────────────────
 
 export async function buildCancelAllIxs(

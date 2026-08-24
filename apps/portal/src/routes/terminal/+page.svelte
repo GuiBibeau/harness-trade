@@ -9,6 +9,7 @@
   import BookLadder from "./components/BookLadder.svelte";
   import CheatSheetModal from "./components/CheatSheetModal.svelte";
   import ClosePreviewModal from "./components/ClosePreviewModal.svelte";
+  import ReversePreviewModal from "./components/ReversePreviewModal.svelte";
   import CommandPalette from "./components/CommandPalette.svelte";
   import FundingWizard from "./components/FundingWizard.svelte";
   import FundsModal from "./components/FundsModal.svelte";
@@ -279,11 +280,16 @@
     isRecord,
   } from "$lib/utils";
   import {
+    canAffordReverse,
+    canMoveStopToBreakEven,
     clampLeverage,
     enrichPosition,
+    formatFundingCountdown,
     fmtTriggerPrice,
     liqDistancePct,
+    msUntilFundingSettle,
     orderCancelKey,
+    positionFundingHoldCostUsd,
   } from "$lib/terminal/trade-math";
   import { createPerpTicket } from "$lib/terminal/perp-ticket";
   import { createSpotTicket } from "$lib/terminal/spot-ticket";
@@ -4516,10 +4522,31 @@
     position: PhoenixPosition;
     fraction: number;
   } | null = null;
+  let reversePreview: PhoenixPosition | null = null;
   $: flattenEstPnl = enrichedPositions.reduce(
     (sum, position) => sum + (position.unrealizedPnl ?? 0),
     0,
   );
+
+  $: fundingHint = (() => {
+    if (tradeMode !== "perps") return "";
+    const countdown = formatFundingCountdown(msUntilFundingSettle(nowMs));
+    const selected = enrichedPositions.find(
+      (position) => position.symbol === selectedSymbol,
+    );
+    if (!selected) return `${countdown} · est --`;
+    const cost = positionFundingHoldCostUsd(
+      selected.positionValue ??
+        (marketMids[selected.symbol] != null
+          ? Math.abs(selected.size) * marketMids[selected.symbol]
+          : null),
+      fundingPercent,
+      selected.size > 0 ? "long" : "short",
+    );
+    if (cost === null) return `${countdown} · est --`;
+    const abs = formatNumber(Math.abs(cost), 2);
+    return `${countdown} · est ${cost >= 0 ? "-" : "+"}$${abs}`;
+  })();
 
   function openClosePreview(position: PhoenixPosition, fraction = 1): void {
     closePreview = { position, fraction };
@@ -4538,6 +4565,184 @@
       preview.position.size,
       preview.position.subaccountIndex,
     );
+  }
+
+  function openReversePreview(position: PhoenixPosition): void {
+    reversePreview = position;
+  }
+
+  function moveStopToBreakEven(position: PhoenixPosition): void {
+    const mark =
+      marketMids[position.symbol] ??
+      (position.symbol === selectedSymbol ? latestPrice : null);
+    const gate = canMoveStopToBreakEven({
+      side: position.size > 0 ? "long" : "short",
+      entryPrice: position.entryPrice,
+      markPrice: mark,
+      stopLossPrice: position.stopLossPrice,
+      size: position.size,
+      unrealizedPnlUsd: position.unrealizedPnl,
+    });
+    if (!gate.ok || position.entryPrice === null) {
+      phoenixActionError = gate.reason ?? "Break-even unavailable";
+      phoenixActionErrorDetail = "";
+      phoenixActionRetry = null;
+      return;
+    }
+    void submitTpSlDrag(
+      position,
+      "sl",
+      position.entryPrice,
+      position.stopLossPrice ?? position.entryPrice,
+    );
+  }
+
+  async function confirmReversePreview(): Promise<void> {
+    const position = reversePreview;
+    if (!position) return;
+    reversePreview = null;
+    await reversePhoenixPosition(position);
+  }
+
+  async function reversePhoenixPosition(
+    position: PhoenixPosition,
+  ): Promise<void> {
+    const rowKey = `${position.symbol}:${position.subaccountIndex}`;
+    const busyKey = `reverse:${rowKey}`;
+    const mark =
+      marketMids[position.symbol] ??
+      (position.symbol === selectedSymbol ? latestPrice : null);
+    const notional =
+      position.positionValue ??
+      (mark !== null ? Math.abs(position.size) * mark : null);
+    const gate = canAffordReverse({
+      freeCollateralUsd: phoenixCollateral,
+      marginUsd: position.marginUsd,
+      unrealizedPnlUsd: position.unrealizedPnl,
+      notionalUsd: notional,
+    });
+    if (!gate.ok) {
+      phoenixActionError = gate.reason ?? "Reverse unavailable";
+      phoenixActionErrorDetail = "";
+      phoenixActionRetry = null;
+      return;
+    }
+    if (mark === null || !(mark > 0)) {
+      phoenixActionError = "Mark unavailable for reverse";
+      phoenixActionErrorDetail = "";
+      phoenixActionRetry = null;
+      return;
+    }
+
+    if (paperMode) {
+      try {
+        // Opposite market order at 2× notional flips size in one ledger step.
+        const leverage =
+          position.marginUsd && position.marginUsd > 0 && notional
+            ? Math.max(1, notional / position.marginUsd)
+            : 5;
+        const openSide: PhoenixSide = position.size > 0 ? "ask" : "bid";
+        const result = placePaperOrder($paperLedger, {
+          symbol: position.symbol,
+          side: openSide,
+          orderType: "market",
+          notionalUsd: (notional ?? Math.abs(position.size) * mark) * 2,
+          leverage,
+          price: mark,
+          takeProfitPrice: null,
+          stopLossPrice: null,
+          reduceOnly: false,
+        });
+        paperLedger.set(result.ledger);
+        notePaperEvents(result.events);
+        track("position_reversed", {
+          ...marketContext(),
+          symbol: position.symbol,
+          mode: "paper",
+        });
+      } catch (error) {
+        phoenixActionError =
+          error instanceof Error ? error.message : "paper-reverse-failed";
+        phoenixActionErrorDetail = "";
+        phoenixActionRetry = null;
+      }
+      return;
+    }
+
+    if (!phoenixAuthority || phoenixBusyKeys.has(busyKey)) return;
+    const expectedLiveExecutionEpoch = captureLiveExecutionEpoch();
+    setPhoenixBusy(busyKey, true);
+    phoenixActionError = "";
+    phoenixActionErrorDetail = "";
+    phoenixActionRetry = null;
+    const preFingerprint = snapshotFingerprint();
+    const fromSide = position.size > 0 ? "LONG" : "SHORT";
+    const toSide = position.size > 0 ? "SHORT" : "LONG";
+    try {
+      const trade = await tradeModule();
+      const plan = await trade.buildReversePositionPlan({
+        authority: phoenixAuthority,
+        position,
+        markPrice: mark,
+      });
+      lastTradeSignature = await signAndSendPhoenixIxs(
+        plan.instructions,
+        {
+          title: `Reverse ${position.symbol}-PERP`,
+          details: [
+            "Venue: Phoenix Perps",
+            `Close ${fromSide} → open ${toSide}`,
+            `Size: ${formatNumber(Math.abs(position.size), 6)} ${position.symbol}`,
+          ],
+        },
+        expectedLiveExecutionEpoch,
+        busyKey,
+      );
+      track("position_reversed", {
+        ...marketContext(),
+        symbol: position.symbol,
+        mode: "live",
+        signature: lastTradeSignature,
+      });
+      noteTrade({
+        ts: Date.now(),
+        mode: "live",
+        venue: "perp",
+        symbol: position.symbol,
+        action: "close",
+        notionalUsd: notional,
+        price: mark,
+        leverage: null,
+        signature: lastTradeSignature,
+      });
+      noteTrade({
+        ts: Date.now(),
+        mode: "live",
+        venue: "perp",
+        symbol: position.symbol,
+        action: position.size > 0 ? "short" : "long",
+        notionalUsd: notional,
+        price: mark,
+        leverage:
+          position.marginUsd && notional
+            ? Math.round((notional / position.marginUsd) * 10) / 10
+            : null,
+        signature: lastTradeSignature,
+      });
+      void burstRefreshPhoenix(preFingerprint);
+    } catch (error) {
+      const human = humanizeTradeError(error);
+      phoenixActionError = human.text;
+      phoenixActionErrorDetail = human.detail;
+      phoenixActionRetry = human.retriable
+        ? () => void reversePhoenixPosition(position)
+        : null;
+      if (human.confirmUncertain) void burstRefreshPhoenix(preFingerprint);
+      markLastTxFailed(busyKey);
+    } finally {
+      setPhoenixBusy(busyKey, false);
+      clearTxStage(busyKey);
+    }
   }
 
   async function reconnectMarketData(): Promise<void> {
@@ -6585,7 +6790,8 @@
       !settingsOpen &&
       !paletteOpen &&
       !cheatOpen &&
-      !closePreview
+      !closePreview &&
+      !reversePreview
     ) {
       const ticketKey = event.key.toLowerCase();
       if (ticketKey === "b" || ticketKey === "s") {
@@ -6610,7 +6816,8 @@
       settingsOpen ||
       paletteOpen ||
       cheatOpen ||
-      closePreview
+      closePreview ||
+      reversePreview
     ) {
       return;
     }
@@ -6799,6 +7006,7 @@
     ontogglewatch={toggleWatch}
     onopenpalette={openPalette}
     onsectionselect={scrollToSection}
+    {fundingHint}
   />
 
   <!-- Sticky chrome (topbar on desktop + market rail) covers the top of the
@@ -7436,6 +7644,8 @@
       onmarginopen={openMarginAdd}
       onmarginsubmit={(position) => submitMarginAdd(position)}
       onresetpaper={resetPaperAccount}
+      onbreakeven={moveStopToBreakEven}
+      onreverse={openReversePreview}
       {flattenEstPnl}
     />
 {/snippet}
@@ -7496,6 +7706,22 @@
     )}
     onconfirm={confirmClosePreview}
     onclose={() => (closePreview = null)}
+  />
+{/if}
+
+{#if reversePreview}
+  <ReversePreviewModal
+    position={reversePreview}
+    mark={marketMids[reversePreview.symbol] ??
+      (reversePreview.symbol === selectedSymbol ? latestPrice : null)}
+    {paperMode}
+    {displayCurrency}
+    fxRate={displayFxRate}
+    busy={phoenixBusyKeys.has(
+      `reverse:${reversePreview.symbol}:${reversePreview.subaccountIndex}`,
+    )}
+    onconfirm={() => void confirmReversePreview()}
+    onclose={() => (reversePreview = null)}
   />
 {/if}
 

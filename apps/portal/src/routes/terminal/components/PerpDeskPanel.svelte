@@ -8,7 +8,7 @@
   } from "$lib/phoenix-trade";
   import { panelStyle, usePanelLayout } from "$lib/terminal/layout";
   import type { SignalRow } from "$lib/terminal/panels";
-  import { liqDistancePct, orderCancelKey } from "$lib/terminal/trade-math";
+  import { liqDistancePct, orderCancelKey, canAffordReverse, canMoveStopToBreakEven } from "$lib/terminal/trade-math";
   import {
     formatDisplayMoney,
     formatDisplayMoneySigned,
@@ -75,6 +75,8 @@
     onmarginopen,
     onmarginsubmit,
     onresetpaper,
+    onbreakeven,
+    onreverse,
   }: {
     authority: string;
     trader: PhoenixTraderState | null;
@@ -124,6 +126,8 @@
     onmarginopen: (position: PhoenixPosition) => void;
     onmarginsubmit: (position: PhoenixPosition) => void;
     onresetpaper?: () => void;
+    onbreakeven: (position: PhoenixPosition) => void;
+    onreverse: (position: PhoenixPosition) => void;
   } = $props();
 
   const money = (usd: number, digits = 2) =>
@@ -282,6 +286,29 @@
         {@const liqDist = liqDistancePctOf(position)}
         {@const rowKey = `${position.symbol}:${position.subaccountIndex}`}
         {@const closeBusy = busyKeys.has(`close:${rowKey}`)}
+        {@const reverseBusy = busyKeys.has(`reverse:${rowKey}`)}
+        {@const tpslBusy = busyKeys.has(
+          `tpsl:${position.symbol}:${position.subaccountIndex}`,
+        )}
+        {@const mark =
+          marketMids[position.symbol] ??
+          (position.symbol === selectedSymbol ? latestPrice : null)}
+        {@const beGate = canMoveStopToBreakEven({
+          side: position.size > 0 ? "long" : "short",
+          entryPrice: position.entryPrice,
+          markPrice: mark,
+          stopLossPrice: position.stopLossPrice,
+          size: position.size,
+          unrealizedPnlUsd: position.unrealizedPnl,
+        })}
+        {@const reverseGate = canAffordReverse({
+          freeCollateralUsd,
+          marginUsd: position.marginUsd,
+          unrealizedPnlUsd: position.unrealizedPnl,
+          notionalUsd:
+            position.positionValue ??
+            (mark !== null ? Math.abs(position.size) * mark : null),
+        })}
         <div class="pos-card">
           <div class="pos-card-top">
             <span
@@ -368,6 +395,33 @@
                 {pct}%
               </button>
             {/each}
+            <button
+              class="row-action"
+              type="button"
+              disabled={!beGate.ok || tpslBusy || closingKeys.has(rowKey)}
+              title={beGate.reason ?? "Move stop loss to entry (break-even)"}
+              onclick={() => onbreakeven(position)}
+            >
+              BE
+            </button>
+            <button
+              class="row-action"
+              type="button"
+              disabled={
+                !reverseGate.ok ||
+                closeBusy ||
+                reverseBusy ||
+                closingKeys.has(rowKey)
+              }
+              title={
+                reverseGate.reason ??
+                "Close and open the opposite side at the same size"
+              }
+              onclick={() => onreverse(position)}
+            >
+              {#if reverseBusy}<span class="spinner" aria-hidden="true"></span>{/if}
+              Reverse
+            </button>
             <button
               class="row-action"
               type="button"

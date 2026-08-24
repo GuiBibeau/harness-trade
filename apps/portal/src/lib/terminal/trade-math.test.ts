@@ -3,12 +3,18 @@ import type { DepthLevel, PhoenixMarketConfig } from "$lib/phoenix-market-data";
 import type { PhoenixOpenOrder, PhoenixPosition } from "$lib/phoenix-trade";
 import {
   buildTradePreview,
+  canAffordReverse,
+  canMoveStopToBreakEven,
   clampLeverage,
   enrichPosition,
   fmtTriggerPrice,
+  formatFundingCountdown,
   liqDistancePct,
   liquidationPriceEstimate,
+  msUntilFundingSettle,
+  nextFundingSettleAt,
   orderCancelKey,
+  positionFundingHoldCostUsd,
   riskNotional,
   SL_CHIP_PCTS,
   TP_CHIP_PCTS,
@@ -465,5 +471,78 @@ describe("liquidationPriceEstimate", () => {
     expect(
       liquidationPriceEstimate(100, 10, Number.POSITIVE_INFINITY, 0.025),
     ).toBeNull();
+  });
+});
+
+describe("funding countdown + hold cost", () => {
+  test("next settle lands on the following UTC 8h bucket", () => {
+    // 2026-08-20T01:00:00.000Z → next is 08:00 UTC
+    const now = Date.UTC(2026, 7, 20, 1, 0, 0);
+    expect(nextFundingSettleAt(now)).toBe(Date.UTC(2026, 7, 20, 8, 0, 0));
+    expect(formatFundingCountdown(msUntilFundingSettle(now))).toBe("in 7h 0m");
+  });
+
+  test("hold cost flips sign for shorts", () => {
+    expect(positionFundingHoldCostUsd(1000, 0.01, "long")).toBeCloseTo(0.1, 8);
+    expect(positionFundingHoldCostUsd(1000, 0.01, "short")).toBeCloseTo(
+      -0.1,
+      8,
+    );
+    expect(positionFundingHoldCostUsd(null, 0.01, "long")).toBeNull();
+  });
+});
+
+describe("break-even gate + reverse affordability", () => {
+  test("BE requires ≥ +0.5R and a protective entry vs mark", () => {
+    // Entry 100, stop 90 → risk $100 on size 10. uPnL +60 → +0.6R.
+    expect(
+      canMoveStopToBreakEven({
+        side: "long",
+        entryPrice: 100,
+        markPrice: 106,
+        stopLossPrice: 90,
+        size: 10,
+        unrealizedPnlUsd: 60,
+      }).ok,
+    ).toBe(true);
+    expect(
+      canMoveStopToBreakEven({
+        side: "long",
+        entryPrice: 100,
+        markPrice: 103,
+        stopLossPrice: 90,
+        size: 10,
+        unrealizedPnlUsd: 30,
+      }).ok,
+    ).toBe(false);
+    expect(
+      canMoveStopToBreakEven({
+        side: "long",
+        entryPrice: 100,
+        markPrice: 106,
+        stopLossPrice: null,
+        size: 10,
+        unrealizedPnlUsd: 60,
+      }).reason,
+    ).toContain("stop");
+  });
+
+  test("reverse affordability uses freed margin + free collateral", () => {
+    expect(
+      canAffordReverse({
+        freeCollateralUsd: 0,
+        marginUsd: 100,
+        unrealizedPnlUsd: 0,
+        notionalUsd: 500,
+      }).ok,
+    ).toBe(true);
+    expect(
+      canAffordReverse({
+        freeCollateralUsd: 10,
+        marginUsd: 100,
+        unrealizedPnlUsd: -50,
+        notionalUsd: 500,
+      }).ok,
+    ).toBe(false);
   });
 });
