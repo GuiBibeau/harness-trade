@@ -22,6 +22,7 @@
     ontogglewatch,
     onopenpalette,
     onsectionselect,
+    fundingHint = "",
   }: {
     perp: {
       price: number | null;
@@ -44,6 +45,8 @@
     ontogglewatch: (symbol: string) => void;
     onopenpalette: () => void;
     onsectionselect: (id: string) => void;
+    /** Preformatted "in 2h 14m · est $0.12" (or "--") for the Funding cell. */
+    fundingHint?: string;
   } = $props();
 
   // Aliases keep the moved markup verbatim against the page's names.
@@ -152,9 +155,10 @@
         <TickerStat
           label="Funding"
           value={formatPercent(fundingPercent)}
-          width="4rem"
+          width="5.5rem"
           loading={statsLoading}
           valueClass={(fundingPercent ?? 0) >= 0 ? "positive" : "negative"}
+          hint={fundingHint}
         />
         {#if perpBasisBps !== null}
           <TickerStat

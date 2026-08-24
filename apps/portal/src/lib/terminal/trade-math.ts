@@ -215,3 +215,161 @@ export function tpSlExecutionPrice(
 export function orderCancelKey(order: PhoenixOpenOrder): string {
   return `cancel:${order.symbol}:${order.side}:${order.isStopLoss ? "sl" : order.orderSequenceNumber}`;
 }
+
+/** Phoenix product copy treats funding as an 8h UTC schedule (00/08/16). */
+export const FUNDING_INTERVAL_MS = 8 * 60 * 60 * 1000;
+
+export function nextFundingSettleAt(nowMs: number): number {
+  if (!Number.isFinite(nowMs)) return Number.NaN;
+  return (
+    Math.floor(nowMs / FUNDING_INTERVAL_MS) * FUNDING_INTERVAL_MS +
+    FUNDING_INTERVAL_MS
+  );
+}
+
+export function msUntilFundingSettle(nowMs: number): number | null {
+  const next = nextFundingSettleAt(nowMs);
+  if (!Number.isFinite(next)) return null;
+  return Math.max(0, next - nowMs);
+}
+
+export function formatFundingCountdown(ms: number | null): string {
+  if (ms === null || !Number.isFinite(ms)) return "--";
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  if (hours > 0) return `in ${hours}h ${minutes}m`;
+  return `in ${minutes}m`;
+}
+
+/**
+ * Est. USDC paid (positive) or received (negative) to hold through one
+ * funding window. Longs pay when rate > 0; shorts are the opposite.
+ */
+export function positionFundingHoldCostUsd(
+  notionalUsd: number | null,
+  fundingPct: number | null,
+  side: "long" | "short",
+): number | null {
+  if (
+    notionalUsd === null ||
+    fundingPct === null ||
+    !(notionalUsd > 0) ||
+    !Number.isFinite(fundingPct)
+  ) {
+    return null;
+  }
+  const raw = (fundingPct / 100) * notionalUsd;
+  return side === "long" ? raw : -raw;
+}
+
+/** Open-position R from uPnL vs stop-distance risk. Null without a valid stop. */
+export function unrealizedRMultiple(input: {
+  side: "long" | "short";
+  entryPrice: number | null;
+  stopLossPrice: number | null;
+  size: number;
+  unrealizedPnlUsd: number | null;
+}): number | null {
+  const { entryPrice, stopLossPrice, size, unrealizedPnlUsd } = input;
+  if (
+    entryPrice === null ||
+    stopLossPrice === null ||
+    unrealizedPnlUsd === null ||
+    !(entryPrice > 0) ||
+    !(stopLossPrice > 0) ||
+    !(Math.abs(size) > 0)
+  ) {
+    return null;
+  }
+  const stopDistance =
+    input.side === "long"
+      ? entryPrice - stopLossPrice
+      : stopLossPrice - entryPrice;
+  if (!(stopDistance > 0)) return null;
+  const riskUsd = Math.abs(size) * stopDistance;
+  if (!(riskUsd > 0)) return null;
+  const value = unrealizedPnlUsd / riskUsd;
+  return Number.isFinite(value) ? value : null;
+}
+
+export function canMoveStopToBreakEven(input: {
+  side: "long" | "short";
+  entryPrice: number | null;
+  markPrice: number | null;
+  stopLossPrice: number | null;
+  size: number;
+  unrealizedPnlUsd: number | null;
+  minR?: number;
+}): { ok: boolean; reason: string | null; rMultiple: number | null } {
+  const minR = input.minR ?? 0.5;
+  if (input.entryPrice === null || !(input.entryPrice > 0)) {
+    return { ok: false, reason: "Entry unavailable", rMultiple: null };
+  }
+  if (input.markPrice === null || !(input.markPrice > 0)) {
+    return { ok: false, reason: "Mark unavailable", rMultiple: null };
+  }
+  // SL at entry must still be on the protective side of the mark.
+  const beValid =
+    input.side === "long"
+      ? input.entryPrice < input.markPrice
+      : input.entryPrice > input.markPrice;
+  if (!beValid) {
+    return {
+      ok: false,
+      reason: "Entry is on the wrong side of mark for a stop",
+      rMultiple: null,
+    };
+  }
+  const r = unrealizedRMultiple({
+    side: input.side,
+    entryPrice: input.entryPrice,
+    stopLossPrice: input.stopLossPrice,
+    size: input.size,
+    unrealizedPnlUsd: input.unrealizedPnlUsd,
+  });
+  if (r === null) {
+    return {
+      ok: false,
+      reason: "Set a stop first to measure R",
+      rMultiple: null,
+    };
+  }
+  if (r < minR) {
+    return {
+      ok: false,
+      reason: `Need ≥ +${minR}R (now ${r >= 0 ? "+" : ""}${r.toFixed(2)}R)`,
+      rMultiple: r,
+    };
+  }
+  return { ok: true, reason: null, rMultiple: r };
+}
+
+/** After close frees margin + uPnL, can the same notional flip reopen? */
+export function canAffordReverse(input: {
+  freeCollateralUsd: number;
+  marginUsd: number | null;
+  unrealizedPnlUsd: number | null;
+  notionalUsd: number | null;
+}): { ok: boolean; reason: string | null; needUsd: number | null } {
+  const notional = input.notionalUsd;
+  const margin = input.marginUsd;
+  if (
+    notional === null ||
+    !(notional > 0) ||
+    margin === null ||
+    !(margin > 0)
+  ) {
+    return { ok: false, reason: "Position sizing unavailable", needUsd: null };
+  }
+  const available =
+    input.freeCollateralUsd + margin + (input.unrealizedPnlUsd ?? 0);
+  if (available + 1e-6 < margin) {
+    return {
+      ok: false,
+      reason: `Need $${margin.toFixed(2)} margin after close, have ~$${Math.max(0, available).toFixed(2)}`,
+      needUsd: margin,
+    };
+  }
+  return { ok: true, reason: null, needUsd: margin };
+}

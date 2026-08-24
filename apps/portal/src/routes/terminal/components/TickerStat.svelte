@@ -7,12 +7,15 @@
     width,
     loading,
     valueClass = "",
+    hint = "",
   }: {
     label: string;
     value: string;
     width: string;
     loading: boolean;
     valueClass?: string;
+    /** Optional second line (e.g. funding countdown + hold cost). */
+    hint?: string;
   } = $props();
 </script>
 
@@ -22,6 +25,9 @@
     <span class="skeleton skel-val" aria-hidden="true"></span>
   {:else}
     <b class={valueClass}>{value}</b>
+    {#if hint}
+      <em class="tk-hint">{hint}</em>
+    {/if}
   {/if}
 </div>
 
@@ -49,6 +55,14 @@
     font-size: 0.78rem;
     font-weight: 600;
     color: var(--ink);
+  }
+
+  .tk-hint {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.58rem;
+    font-style: normal;
+    color: var(--faint);
   }
 
   .skel-val {
