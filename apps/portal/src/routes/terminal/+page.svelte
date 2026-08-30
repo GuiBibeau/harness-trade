@@ -108,6 +108,7 @@
     persistPrefs,
     PREFS_STORAGE_KEY,
     RAYS_PER_SYMBOL_CAP,
+    type OrderTemplate,
   } from "$lib/terminal/prefs";
   import { isCurrentMarketGeneration } from "$lib/terminal/market-generation";
   import {
@@ -914,6 +915,7 @@
   // Watchlist: starred symbols (uppercase), persisted in prefs.
   // Lives in the bottom dock (Positions / Journal / Alerts / Watch).
   let watchlist: string[] = [];
+  let orderTemplates: OrderTemplate[] = [];
   // Screener controls (persisted; screener panel retired but prefs kept).
   let screenSort: "movers" | "volume" | "cap" = "movers";
   let screenHub: "all" | "crypto" | "equities" | "pre-ipo" = "all";
@@ -1784,6 +1786,7 @@
       paperMode,
       displayCurrency,
       displayTimezone,
+      orderTemplates,
     );
 
   function agentOk(message: string): AgentActionResult {
@@ -6716,6 +6719,9 @@
     } else {
       displayTimezone = detectBrowserTimezone();
     }
+    if (prefs.orderTemplates !== undefined) {
+      orderTemplates = prefs.orderTemplates;
+    }
     // Without Privy, live trading is impossible — stay in paper regardless
     // of a previously saved LIVE preference.
     if (!readPrivyConfig().appId) paperMode = true;
@@ -8061,6 +8067,7 @@
     onmanualsize={() => (sizeSource = "manual")}
     onsizechip={setSizeChip}
     onriskchip={setRiskChip}
+    bind:orderTemplates
   />
 {/snippet}
 

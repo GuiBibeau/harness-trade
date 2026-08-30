@@ -82,6 +82,36 @@ describe("parsePrefs", () => {
     ).toBeUndefined();
   });
 
+  test("parses order templates with a hard cap of 6", () => {
+    const rows = Array.from({ length: 8 }, (_, i) => ({
+      id: `t${i}`,
+      name: `T${i}`,
+      sizeUsd: 100 + i,
+      leverage: 5,
+      tpPct: 2,
+      slPct: 1,
+    }));
+    const prefs = parsePrefs(JSON.stringify({ orderTemplates: rows }));
+    expect(prefs.orderTemplates).toHaveLength(6);
+    expect(prefs.orderTemplates?.[0]?.name).toBe("T0");
+    expect(
+      parsePrefs(
+        JSON.stringify({
+          orderTemplates: [
+            {
+              id: "x",
+              name: "Bad",
+              sizeUsd: 50,
+              leverage: 3,
+              tpPct: null,
+              slPct: null,
+            },
+          ],
+        }),
+      ).orderTemplates,
+    ).toEqual([]);
+  });
+
   test("rejects out-of-enum values field by field", () => {
     const prefs = parsePrefs(
       JSON.stringify({

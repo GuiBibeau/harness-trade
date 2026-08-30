@@ -72,7 +72,70 @@ export type TerminalPrefs = {
   displayCurrency: DisplayCurrencyCode;
   /** IANA timezone for clocks and journal/tape stamps. */
   displayTimezone: DisplayTimezoneId;
+  /** Named order templates (max 6) — size/leverage/TP%/SL%. */
+  orderTemplates: OrderTemplate[];
 };
+
+export const ORDER_TEMPLATES_CAP = 6;
+export const TICKET_LEVERAGES = [1, 2, 5, 10, 20] as const;
+export type TicketLeverage = (typeof TICKET_LEVERAGES)[number];
+
+export type OrderTemplate = {
+  id: string;
+  name: string;
+  sizeUsd: number;
+  leverage: TicketLeverage;
+  tpPct: number | null;
+  slPct: number | null;
+};
+
+export function parseOrderTemplates(value: unknown): OrderTemplate[] {
+  if (!Array.isArray(value)) return [];
+  const out: OrderTemplate[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const candidate = row as Record<string, unknown>;
+    const name =
+      typeof candidate.name === "string"
+        ? candidate.name.trim().slice(0, 24)
+        : "";
+    const sizeUsd = Number(candidate.sizeUsd);
+    const leverage = Number(candidate.leverage);
+    const id =
+      typeof candidate.id === "string" && candidate.id
+        ? candidate.id
+        : `t-${out.length}`;
+    if (!name || !(sizeUsd > 0) || !Number.isFinite(sizeUsd)) continue;
+    if (!(TICKET_LEVERAGES as readonly number[]).includes(leverage)) continue;
+    const tpRaw = candidate.tpPct;
+    const slRaw = candidate.slPct;
+    const tpPct =
+      tpRaw === null || tpRaw === undefined
+        ? null
+        : typeof tpRaw === "number" && Number.isFinite(tpRaw) && tpRaw > 0
+          ? tpRaw
+          : null;
+    const slPct =
+      slRaw === null || slRaw === undefined
+        ? null
+        : typeof slRaw === "number" && Number.isFinite(slRaw) && slRaw > 0
+          ? slRaw
+          : null;
+    // Invalid non-null pcts reject the whole template.
+    if (tpRaw !== null && tpRaw !== undefined && tpPct === null) continue;
+    if (slRaw !== null && slRaw !== undefined && slPct === null) continue;
+    out.push({
+      id,
+      name,
+      sizeUsd,
+      leverage: leverage as TicketLeverage,
+      tpPct,
+      slPct,
+    });
+    if (out.length >= ORDER_TEMPLATES_CAP) break;
+  }
+  return out;
+}
 
 /** Rays per symbol — placing a 13th evicts the oldest (FIFO). */
 export const RAYS_PER_SYMBOL_CAP = 12;
@@ -193,6 +256,9 @@ export function parsePrefs(raw: string | null): Partial<TerminalPrefs> {
   if (isValidIanaTimezone(data.displayTimezone)) {
     prefs.displayTimezone = data.displayTimezone;
   }
+  if (data.orderTemplates !== undefined) {
+    prefs.orderTemplates = parseOrderTemplates(data.orderTemplates);
+  }
   return prefs;
 }
 
@@ -233,6 +299,7 @@ export function persistPrefs(
   _paperMode: boolean,
   _displayCurrency: DisplayCurrencyCode,
   _displayTimezone: DisplayTimezoneId,
+  _orderTemplates: OrderTemplate[] = [],
 ): void {
   if (typeof window === "undefined") return;
   try {
@@ -261,6 +328,7 @@ export function persistPrefs(
         paperMode: _paperMode,
         displayCurrency: _displayCurrency,
         displayTimezone: _displayTimezone,
+        orderTemplates: _orderTemplates.slice(0, ORDER_TEMPLATES_CAP),
       }),
     );
   } catch {
