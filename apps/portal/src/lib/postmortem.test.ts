@@ -7,6 +7,7 @@ import {
   recordPostMortem,
   riskUsd,
   rMultiple,
+  winRecordUtc,
 } from "./postmortem";
 
 const STORAGE_KEY = "trader-ralph-terminal/postmortems/v1";
@@ -112,5 +113,54 @@ describe("postmortem storage", () => {
     clearPostMortems();
     expect(storage.has(STORAGE_KEY)).toBe(false);
     expect(loadPostMortems()).toEqual([]);
+  });
+});
+
+describe("winRecordUtc", () => {
+  test("counts wins from closed reviews with realized PnL on the UTC day", () => {
+    const now = Date.UTC(2026, 6, 21, 15, 0, 0);
+    const rows = [
+      buildClosedTradeReview({
+        ts: Date.UTC(2026, 6, 21, 1, 0, 0),
+        mode: "paper",
+        symbol: "SOL",
+        side: "long",
+        entryPrice: 100,
+        exitPrice: 110,
+        stopLossPrice: 95,
+        notionalUsd: 500,
+        realizedPnlUsd: 50,
+        exitReason: "tp",
+        signature: "w1",
+      }),
+      buildClosedTradeReview({
+        ts: Date.UTC(2026, 6, 21, 2, 0, 0),
+        mode: "paper",
+        symbol: "SOL",
+        side: "long",
+        entryPrice: 100,
+        exitPrice: 90,
+        stopLossPrice: 95,
+        notionalUsd: 500,
+        realizedPnlUsd: -50,
+        exitReason: "sl",
+        signature: "l1",
+      }),
+      buildClosedTradeReview({
+        ts: Date.UTC(2026, 6, 20, 23, 0, 0),
+        mode: "paper",
+        symbol: "SOL",
+        side: "long",
+        entryPrice: 100,
+        exitPrice: 110,
+        stopLossPrice: 95,
+        notionalUsd: 500,
+        realizedPnlUsd: 50,
+        exitReason: "tp",
+        signature: "old",
+      }),
+    ];
+    expect(winRecordUtc(rows, now, "paper")).toEqual({ wins: 1, total: 2 });
+    expect(winRecordUtc(rows, now, "live")).toBeNull();
   });
 });

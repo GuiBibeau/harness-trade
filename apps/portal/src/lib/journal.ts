@@ -77,6 +77,20 @@ export function entriesToday(
   return entries.filter((entry) => entry.ts >= start.getTime());
 }
 
+/** UTC midnight boundary — used by the market-rail session stats (#545). */
+export function startOfUtcDayMs(now: number): number {
+  const date = new Date(now);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+export function entriesTodayUtc(
+  entries: JournalEntry[],
+  now: number,
+): JournalEntry[] {
+  const start = startOfUtcDayMs(now);
+  return entries.filter((entry) => entry.ts >= start);
+}
+
 export function journalToCsv(entries: JournalEntry[]): string {
   const header =
     "time_utc,venue,symbol,action,notional_usd,price,leverage,mode,signature";

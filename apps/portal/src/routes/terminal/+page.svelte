@@ -236,6 +236,7 @@
   import {
     clearJournal,
     entriesToday,
+    entriesTodayUtc,
     loadJournal,
     recordTrade,
     type JournalEntry,
@@ -245,6 +246,7 @@
     clearPostMortems,
     loadPostMortems,
     recordPostMortem,
+    winRecordUtc,
     type ClosedTradeReview,
     type PostMortemExitReason,
     type PostMortemSide,
@@ -706,6 +708,78 @@
   $: displayFxRate = rateForCurrency(displayCurrency, fxRates);
   let fundsTab: "receive" | "convert" | "phoenix" = "receive";
   let tradeOpen = false;
+  let tradeModalPanel: HTMLElement | undefined;
+  let tradeModalPreviousFocus: HTMLElement | null = null;
+  let tradeModalWasOpen = false;
+  const tradeFocusableSelector = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(", ");
+
+  function tradeModalFocusables(): HTMLElement[] {
+    if (!tradeModalPanel) return [];
+    return Array.from(
+      tradeModalPanel.querySelectorAll<HTMLElement>(tradeFocusableSelector),
+    );
+  }
+
+  function restoreTradeModalFocus(): void {
+    const target = tradeModalPreviousFocus;
+    tradeModalPreviousFocus = null;
+    if (target?.isConnected) target.focus();
+  }
+
+  function trapTradeModalTab(event: KeyboardEvent): void {
+    if (!tradeModalPanel) return;
+    const focusables = tradeModalFocusables();
+    if (focusables.length === 0) {
+      event.preventDefault();
+      tradeModalPanel.focus();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (!tradeModalPanel.contains(active)) {
+      event.preventDefault();
+      first.focus();
+      return;
+    }
+    if (event.shiftKey && (active === first || active === tradeModalPanel)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function pullTradeModalFocus(event: FocusEvent): void {
+    if (!tradeOpen || !tradeModalPanel) return;
+    if (tradeModalPanel.contains(event.target as Node)) return;
+    const [first] = tradeModalFocusables();
+    (first ?? tradeModalPanel).focus();
+  }
+
+  $: if (browser) {
+    if (tradeOpen && !tradeModalWasOpen) {
+      tradeModalWasOpen = true;
+      tradeModalPreviousFocus =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      void tick().then(() => {
+        if (tradeOpen) tradeModalPanel?.focus();
+      });
+    } else if (!tradeOpen && tradeModalWasOpen) {
+      tradeModalWasOpen = false;
+      void tick().then(restoreTradeModalFocus);
+    }
+  }
   let pendingBook: { bids: DepthLevel[]; asks: DepthLevel[]; mid: number | null } | null =
     null;
   let bookFrame = 0;
@@ -1620,6 +1694,34 @@
   $: journalToday = entriesToday(journalEntries, Date.now()).filter(
     (entry) => entry.mode === (paperMode ? "paper" : "live"),
   );
+  $: journalTodayUtc = entriesTodayUtc(journalEntries, nowMs).filter(
+    (entry) => entry.mode === (paperMode ? "paper" : "live"),
+  );
+  $: sessionStats =
+    journalTodayUtc.length === 0
+      ? null
+      : (() => {
+          const win = winRecordUtc(
+            postMortems,
+            nowMs,
+            paperMode ? "paper" : "live",
+          );
+          const dayPnl =
+            sessionPnlUsd === null
+              ? "--"
+              : `${sessionPnlUsd >= 0 ? "+" : "-"}$${formatNumber(Math.abs(sessionPnlUsd), 2)}`;
+          return {
+            dayPnl,
+            dayPnlClass:
+              sessionPnlUsd === null
+                ? ""
+                : sessionPnlUsd >= 0
+                  ? "positive"
+                  : "negative",
+            win: win ? `${win.wins}/${win.total}` : "--",
+            fees: "--",
+          };
+        })();
   $: positionBriefKey = (phoenixTrader?.positions ?? [])
     .map((position) => `${position.symbol}:${position.size.toFixed(4)}`)
     .join("|");
@@ -2150,6 +2252,7 @@
       tpslFrame = null;
       posOverlayLines = { entry: null, tp: null, sl: null };
       posOverlayPrices = { entry: null, tp: null, sl: null };
+      if (tradeModalWasOpen) restoreTradeModalFocus();
       lwChart?.remove();
       lwChart = null;
       candleSeries = null;
@@ -6712,6 +6815,10 @@
   }
 
   function onGlobalKeydown(event: KeyboardEvent): void {
+    if (tradeOpen && event.key === "Tab") {
+      trapTradeModalTab(event);
+      return;
+    }
     // A live TP/SL drag owns Escape ahead of everything: cancel the drag
     // (snap back) and swallow — one Escape never doubles as anything else.
     if (event.key === "Escape" && tpslDrag) {
@@ -6914,7 +7021,7 @@
   />
 </svelte:head>
 
-<svelte:window onkeydown={onGlobalKeydown} />
+<svelte:window onkeydown={onGlobalKeydown} onfocusin={pullTradeModalFocus} />
 
 <main
   class="terminal-shell"
@@ -7007,6 +7114,7 @@
     onopenpalette={openPalette}
     onsectionselect={scrollToSection}
     {fundingHint}
+    {sessionStats}
   />
 
   <!-- Sticky chrome (topbar on desktop + market rail) covers the top of the
@@ -7743,13 +7851,21 @@
   <div class="modal-backdrop" role="presentation" onclick={() => (tradeOpen = false)}>
     <!-- Enter from any ticket input submits, gated exactly like the button;
          everything else bubbles so B/S/M/L flip the ticket and Esc closes. -->
-    <section
+    <div
+      bind:this={tradeModalPanel}
       class="modal"
       role="dialog"
       aria-modal="true"
+      aria-label="Trade ticket"
       tabindex="-1"
       onclick={(event) => event.stopPropagation()}
-      onkeydown={onTicketKeydown}
+      onkeydown={(event) => {
+        if (event.key === "Tab") {
+          trapTradeModalTab(event);
+          return;
+        }
+        onTicketKeydown(event);
+      }}
     >
       <div class="panel-head">
         <div>
@@ -7761,7 +7877,7 @@
       <div class="modal-body">
         {@render perpTicketForm()}
       </div>
-    </section>
+    </div>
   </div>
 {/if}
 

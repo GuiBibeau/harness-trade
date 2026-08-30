@@ -196,3 +196,23 @@ export function formatRMultiple(value: number | null): string {
   const abs = Math.abs(value).toFixed(2);
   return `${value >= 0 ? "+" : "-"}${abs}R`;
 }
+
+/** Wins / closed trades for the UTC day — null when no closed reviews with PnL. */
+export function winRecordUtc(
+  reviews: ClosedTradeReview[],
+  now: number,
+  mode: "live" | "paper",
+): { wins: number; total: number } | null {
+  const start = Date.UTC(
+    new Date(now).getUTCFullYear(),
+    new Date(now).getUTCMonth(),
+    new Date(now).getUTCDate(),
+  );
+  const today = reviews.filter(
+    (row) =>
+      row.mode === mode && row.ts >= start && row.realizedPnlUsd !== null,
+  );
+  if (today.length === 0) return null;
+  const wins = today.filter((row) => (row.realizedPnlUsd ?? 0) > 0).length;
+  return { wins, total: today.length };
+}

@@ -23,6 +23,7 @@
     onopenpalette,
     onsectionselect,
     fundingHint = "",
+    sessionStats = null,
   }: {
     perp: {
       price: number | null;
@@ -47,6 +48,13 @@
     onsectionselect: (id: string) => void;
     /** Preformatted "in 2h 14m · est $0.12" (or "--") for the Funding cell. */
     fundingHint?: string;
+    /** Null when today's journal is empty — hide the three session cells. */
+    sessionStats?: {
+      dayPnl: string;
+      dayPnlClass: string;
+      win: string;
+      fees: string;
+    } | null;
   } = $props();
 
   // Aliases keep the moved markup verbatim against the page's names.
@@ -114,6 +122,11 @@
             valueClass={spotBasisBps >= 0 ? "positive" : "negative"}
           />
         {/if}
+        {#if sessionStats}
+          <TickerStat label="Day P&L" value={sessionStats.dayPnl} width="5rem" loading={false} valueClass={sessionStats.dayPnlClass} />
+          <TickerStat label="Win" value={sessionStats.win} width="3.5rem" loading={false} />
+          <TickerStat label="Fees" value={sessionStats.fees} width="3.5rem" loading={false} />
+        {/if}
       </div>
     {:else}
       <div class="ticker-symbol">
@@ -172,6 +185,11 @@
         <TickerStat label="Open Int" value={formatNumber(marketStats?.openInterest, 0)} width="5rem" loading={statsLoading} />
         <TickerStat label="24h Vol" value={formatNumber(marketStats?.dayNtlVlm, 0)} width="6.5rem" loading={statsLoading} />
         <TickerStat label="Updated" value={marketFresh} width="4.5rem" loading={updatedLoading} />
+        {#if sessionStats}
+          <TickerStat label="Day P&L" value={sessionStats.dayPnl} width="5rem" loading={false} valueClass={sessionStats.dayPnlClass} />
+          <TickerStat label="Win" value={sessionStats.win} width="3.5rem" loading={false} />
+          <TickerStat label="Fees" value={sessionStats.fees} width="3.5rem" loading={false} />
+        {/if}
       </div>
     {/if}
   </div>
