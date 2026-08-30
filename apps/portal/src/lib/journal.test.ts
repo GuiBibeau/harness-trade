@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { type JournalEntry, journalToCsv, loadJournal } from "./journal";
+import {
+  entriesTodayUtc,
+  type JournalEntry,
+  journalToCsv,
+  loadJournal,
+  startOfUtcDayMs,
+} from "./journal";
 
 const STORAGE_KEY = "trader-ralph-terminal/journal/v1";
 const storage = new Map<string, string>();
@@ -76,5 +82,19 @@ describe("journalToCsv", () => {
       "time_utc,venue,symbol,action,notional_usd,price,leverage,mode,signature\n" +
         "2026-07-21T12:34:56.000Z,perp,SOL,long,250,172.5,5,paper,abc123",
     );
+  });
+});
+
+describe("entriesTodayUtc", () => {
+  test("uses the UTC day boundary, not local midnight", () => {
+    const now = Date.UTC(2026, 6, 21, 2, 0, 0);
+    expect(startOfUtcDayMs(now)).toBe(Date.UTC(2026, 6, 21, 0, 0, 0));
+    const rows = [
+      { ...entry("live"), ts: Date.UTC(2026, 6, 20, 23, 0, 0), signature: "a" },
+      { ...entry("live"), ts: Date.UTC(2026, 6, 21, 1, 0, 0), signature: "b" },
+    ];
+    expect(entriesTodayUtc(rows, now).map((row) => row.signature)).toEqual([
+      "b",
+    ]);
   });
 });
