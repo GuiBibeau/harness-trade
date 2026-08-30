@@ -1,10 +1,17 @@
 <script lang="ts">
   import type { DepthLevel } from "$lib/phoenix-market-data";
   import { bookLevelNotional, formatBookPrice } from "$lib/terminal/book";
-  import type { PerpTicket } from "$lib/terminal/perp-ticket";
-  import { formatGhostSizeLabel } from "$lib/terminal/perp-ticket";
+  import {
+    formatGhostSizeLabel,
+    snapTicketLeverage,
+    type PerpTicket,
+  } from "$lib/terminal/perp-ticket";
   import { ghostFieldPlaceholder } from "$lib/terminal/ghost-field-placeholder";
   import { stepInput } from "$lib/terminal/step-input";
+  import {
+    ORDER_TEMPLATES_CAP,
+    type OrderTemplate,
+  } from "$lib/terminal/prefs";
   import { SL_CHIP_PCTS, TP_CHIP_PCTS, fmtTriggerPrice } from "$lib/terminal/trade-math";
   import {
     formatDisplayMoney,
@@ -76,6 +83,7 @@
     onmanualsize,
     onsizechip,
     onriskchip,
+    orderTemplates = $bindable([] as OrderTemplate[]),
   }: {
     ticket: PerpTicket;
     sizeInput?: HTMLInputElement | null;
@@ -123,6 +131,7 @@
     onmanualsize: () => void;
     onsizechip: (pct: number | "max") => void;
     onriskchip: (pct: number) => void;
+    orderTemplates?: OrderTemplate[];
   } = $props();
 
   const money = (usd: number, digits = 2) =>
@@ -167,6 +176,48 @@
     dismissGhostSl,
     dismissGhostSize,
   } = ticket;
+
+  function applyOrderTemplate(template: OrderTemplate): void {
+    $sizingMode = "usd";
+    $tradeAmount = String(template.sizeUsd);
+    $tradeLeverage = snapTicketLeverage(template.leverage);
+    if (template.tpPct !== null) setTakeProfitPct(template.tpPct);
+    else $tradeTakeProfit = "";
+    if (template.slPct !== null) setStopLossPct(template.slPct);
+    else $tradeStopLoss = "";
+    onmanualsize();
+  }
+
+  function saveOrderTemplate(): void {
+    if (orderTemplates.length >= ORDER_TEMPLATES_CAP) {
+      window.alert(`Max ${ORDER_TEMPLATES_CAP} templates.`);
+      return;
+    }
+    const sizeUsd = Number($tradeAmount);
+    if (!(sizeUsd > 0)) {
+      window.alert("Set a USD size before saving a template.");
+      return;
+    }
+    const name = window.prompt("Template name")?.trim().slice(0, 24);
+    if (!name) return;
+    const leverage = snapTicketLeverage($tradeLeverage) as OrderTemplate["leverage"];
+    orderTemplates = [
+      ...orderTemplates,
+      {
+        id: `t-${Date.now()}`,
+        name,
+        sizeUsd,
+        leverage,
+        tpPct: $tpPct !== null ? Math.abs($tpPct) : null,
+        slPct: $slPct !== null ? Math.abs($slPct) : null,
+      },
+    ];
+  }
+
+  function deleteOrderTemplate(id: string): void {
+    if (!window.confirm("Delete this template?")) return;
+    orderTemplates = orderTemplates.filter((row) => row.id !== id);
+  }
 
   // Telemetry: once per ghost value per field (not per render).
   let shownTpKey = "";
@@ -368,6 +419,33 @@
       <option value={20}>20x</option>
     </select>
   </label>
+  <div class="field template-row">
+    <div class="chip-row" role="group" aria-label="Order templates">
+      {#each orderTemplates as template (template.id)}
+        <button
+          class="pct-chip"
+          type="button"
+          title={`${template.name} · $${formatNumber(template.sizeUsd, 0)} · ${template.leverage}x — double-click to delete`}
+          onclick={() => applyOrderTemplate(template)}
+          ondblclick={(event) => {
+            event.preventDefault();
+            deleteOrderTemplate(template.id);
+          }}
+        >
+          {template.name}
+        </button>
+      {/each}
+      <button
+        class="pct-chip"
+        type="button"
+        disabled={orderTemplates.length >= ORDER_TEMPLATES_CAP}
+        title="Save current size, leverage, and TP/SL % as a template"
+        onclick={saveOrderTemplate}
+      >
+        + Save
+      </button>
+    </div>
+  </div>
   <label>
     Type
     <select bind:value={$tradeType}>
@@ -693,6 +771,10 @@
     display: grid;
     gap: 0.3rem;
     align-content: start;
+  }
+
+  .template-row {
+    grid-column: 1 / -1;
   }
 
   .ghost-input {
