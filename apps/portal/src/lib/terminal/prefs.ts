@@ -74,6 +74,8 @@ export type TerminalPrefs = {
   displayTimezone: DisplayTimezoneId;
   /** Named order templates (max 6) — size/leverage/TP%/SL%. */
   orderTemplates: OrderTemplate[];
+  /** Quiet fill/TP-SL beeps — default ON unless reduced-motion. */
+  fillSounds: boolean;
 };
 
 export const ORDER_TEMPLATES_CAP = 6;
@@ -259,6 +261,7 @@ export function parsePrefs(raw: string | null): Partial<TerminalPrefs> {
   if (data.orderTemplates !== undefined) {
     prefs.orderTemplates = parseOrderTemplates(data.orderTemplates);
   }
+  if (typeof data.fillSounds === "boolean") prefs.fillSounds = data.fillSounds;
   return prefs;
 }
 
@@ -300,6 +303,7 @@ export function persistPrefs(
   _displayCurrency: DisplayCurrencyCode,
   _displayTimezone: DisplayTimezoneId,
   _orderTemplates: OrderTemplate[] = [],
+  _fillSounds = true,
 ): void {
   if (typeof window === "undefined") return;
   try {
@@ -329,6 +333,7 @@ export function persistPrefs(
         displayCurrency: _displayCurrency,
         displayTimezone: _displayTimezone,
         orderTemplates: _orderTemplates.slice(0, ORDER_TEMPLATES_CAP),
+        fillSounds: _fillSounds,
       }),
     );
   } catch {

@@ -54,6 +54,8 @@
       dayPnlClass: string;
       win: string;
       fees: string;
+      /** Flame when consecutive green days ≥ 2. */
+      streak?: number;
     } | null;
   } = $props();
 
@@ -123,7 +125,15 @@
           />
         {/if}
         {#if sessionStats}
-          <TickerStat label="Day P&L" value={sessionStats.dayPnl} width="5rem" loading={false} valueClass={sessionStats.dayPnlClass} />
+          <TickerStat
+            label="Day P&L"
+            value={sessionStats.streak && sessionStats.streak >= 2
+              ? `${sessionStats.dayPnl} · 🔥${sessionStats.streak}`
+              : sessionStats.dayPnl}
+            width="6.5rem"
+            loading={false}
+            valueClass={sessionStats.dayPnlClass}
+          />
           <TickerStat label="Win" value={sessionStats.win} width="3.5rem" loading={false} />
           <TickerStat label="Fees" value={sessionStats.fees} width="3.5rem" loading={false} />
         {/if}
@@ -186,7 +196,15 @@
         <TickerStat label="24h Vol" value={formatNumber(marketStats?.dayNtlVlm, 0)} width="6.5rem" loading={statsLoading} />
         <TickerStat label="Updated" value={marketFresh} width="4.5rem" loading={updatedLoading} />
         {#if sessionStats}
-          <TickerStat label="Day P&L" value={sessionStats.dayPnl} width="5rem" loading={false} valueClass={sessionStats.dayPnlClass} />
+          <TickerStat
+            label="Day P&L"
+            value={sessionStats.streak && sessionStats.streak >= 2
+              ? `${sessionStats.dayPnl} · 🔥${sessionStats.streak}`
+              : sessionStats.dayPnl}
+            width="6.5rem"
+            loading={false}
+            valueClass={sessionStats.dayPnlClass}
+          />
           <TickerStat label="Win" value={sessionStats.win} width="3.5rem" loading={false} />
           <TickerStat label="Fees" value={sessionStats.fees} width="3.5rem" loading={false} />
         {/if}
