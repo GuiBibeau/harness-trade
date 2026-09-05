@@ -248,10 +248,16 @@
     loadPostMortems,
     recordPostMortem,
     winRecordUtc,
+    greenDayStreak,
     type ClosedTradeReview,
     type PostMortemExitReason,
     type PostMortemSide,
   } from "$lib/postmortem";
+  import {
+    defaultFillSoundsEnabled,
+    playFillSound,
+    playTriggerSound,
+  } from "$lib/terminal/fill-sounds";
   import {
     cancelTriggerOrder,
     createTriggerOrder,
@@ -916,6 +922,7 @@
   // Lives in the bottom dock (Positions / Journal / Alerts / Watch).
   let watchlist: string[] = [];
   let orderTemplates: OrderTemplate[] = [];
+  let fillSounds = true;
   // Screener controls (persisted; screener panel retired but prefs kept).
   let screenSort: "movers" | "volume" | "cap" = "movers";
   let screenHub: "all" | "crypto" | "equities" | "pre-ipo" = "all";
@@ -1703,11 +1710,9 @@
     journalTodayUtc.length === 0
       ? null
       : (() => {
-          const win = winRecordUtc(
-            postMortems,
-            nowMs,
-            paperMode ? "paper" : "live",
-          );
+          const mode = paperMode ? "paper" : "live";
+          const win = winRecordUtc(postMortems, nowMs, mode);
+          const streak = greenDayStreak(postMortems, nowMs, mode);
           const dayPnl =
             sessionPnlUsd === null
               ? "--"
@@ -1722,6 +1727,7 @@
                   : "negative",
             win: win ? `${win.wins}/${win.total}` : "--",
             fees: "--",
+            ...(streak >= 2 ? { streak } : {}),
           };
         })();
   $: positionBriefKey = (phoenixTrader?.positions ?? [])
@@ -1787,6 +1793,7 @@
       displayCurrency,
       displayTimezone,
       orderTemplates,
+      fillSounds,
     );
 
   function agentOk(message: string): AgentActionResult {
@@ -3314,6 +3321,7 @@
           leverage: null,
           signature: filled.event.signature,
         });
+        if (fillSounds) playFillSound();
         alertsStore.pushToast({
           ts: Date.now(),
           title: `Paper spot ${$spotSide}`,
@@ -3366,6 +3374,7 @@
         leverage: null,
         signature: spotSignature,
       });
+      if (fillSounds) playFillSound();
       void refreshWalletBalance(address);
       void refreshTokenBalances(address);
       spotTicket.invalidateQuote(); // a late in-flight quote must not re-arm the button
@@ -3676,6 +3685,21 @@
         leverage: event.leverage,
         signature: event.signature,
       });
+      if (
+        fillSounds &&
+        (event.kind === "open" ||
+          event.kind === "limit_fill" ||
+          event.kind === "spot_buy" ||
+          event.kind === "spot_sell" ||
+          event.kind === "spot_limit_fill")
+      ) {
+        playFillSound();
+      } else if (
+        fillSounds &&
+        (event.kind === "tp" || event.kind === "sl")
+      ) {
+        playTriggerSound();
+      }
       if (isClose) {
         const exitReason: PostMortemExitReason =
           event.kind === "tp"
@@ -4104,6 +4128,7 @@
         leverage,
         signature: lastTradeSignature,
       });
+      if (fillSounds) playFillSound();
       tradeOpen = false;
       // Optimistic pending row (from the params in hand) while the lagging
       // indexer catches up; dropped by the burst if it never confirms.
@@ -4835,6 +4860,7 @@
             : null,
         signature: lastTradeSignature,
       });
+      if (fillSounds) playFillSound();
       void burstRefreshPhoenix(preFingerprint);
     } catch (error) {
       const human = humanizeTradeError(error);
@@ -6722,6 +6748,11 @@
     if (prefs.orderTemplates !== undefined) {
       orderTemplates = prefs.orderTemplates;
     }
+    if (prefs.fillSounds !== undefined) {
+      fillSounds = prefs.fillSounds;
+    } else {
+      fillSounds = defaultFillSoundsEnabled();
+    }
     // Without Privy, live trading is impossible — stay in paper regardless
     // of a previously saved LIVE preference.
     if (!readPrivyConfig().appId) paperMode = true;
@@ -7972,6 +8003,7 @@
   currency={displayCurrency}
   timezone={displayTimezone}
   {showLevels}
+  {fillSounds}
   {layoutCustomized}
   onclose={() => (settingsOpen = false)}
   oncurrencychange={(code) => {
@@ -7982,6 +8014,9 @@
   }}
   ontogglelevels={() => {
     showLevels = !showLevels;
+  }}
+  ontogglefillsounds={() => {
+    fillSounds = !fillSounds;
   }}
   onresetlayout={resetLayout}
   onopenshortcuts={() => {

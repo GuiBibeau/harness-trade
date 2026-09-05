@@ -216,3 +216,49 @@ export function winRecordUtc(
   const wins = today.filter((row) => (row.realizedPnlUsd ?? 0) > 0).length;
   return { wins, total: today.length };
 }
+
+const UTC_DAY_MS = 24 * 60 * 60 * 1000;
+
+function utcDayStart(ts: number): number {
+  const date = new Date(ts);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+/**
+ * Consecutive UTC days with positive realized PnL (mode-scoped), ending at
+ * the most recent day that has closes. Empty days break the streak.
+ * Returns 0 when the streak is below 2 (UI hides the flame).
+ */
+export function greenDayStreak(
+  reviews: ClosedTradeReview[],
+  now: number,
+  mode: "live" | "paper",
+): number {
+  const byDay = new Map<number, number>();
+  for (const row of reviews) {
+    if (row.mode !== mode || row.realizedPnlUsd === null) continue;
+    const day = utcDayStart(row.ts);
+    byDay.set(day, (byDay.get(day) ?? 0) + row.realizedPnlUsd);
+  }
+  if (byDay.size === 0) return 0;
+
+  const today = utcDayStart(now);
+  let cursor = today;
+  // If today has no closes yet, start from the most recent prior traded day.
+  if (!byDay.has(cursor)) {
+    const prior = [...byDay.keys()]
+      .filter((day) => day < today)
+      .sort((a, b) => b - a)[0];
+    if (prior === undefined) return 0;
+    cursor = prior;
+  }
+
+  let streak = 0;
+  while (byDay.has(cursor)) {
+    const pnl = byDay.get(cursor) ?? 0;
+    if (!(pnl > 0)) break;
+    streak += 1;
+    cursor -= UTC_DAY_MS;
+  }
+  return streak >= 2 ? streak : 0;
+}

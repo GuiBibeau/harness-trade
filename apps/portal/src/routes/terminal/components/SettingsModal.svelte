@@ -15,24 +15,28 @@ let {
   timezone,
   showLevels = true,
   layoutCustomized = false,
+  fillSounds = true,
   onclose,
   oncurrencychange,
   ontimezonechange,
   ontogglelevels,
   onresetlayout,
   onopenshortcuts,
+  ontogglefillsounds,
 }: {
   open?: boolean;
   currency: DisplayCurrencyCode;
   timezone: DisplayTimezoneId;
   showLevels?: boolean;
   layoutCustomized?: boolean;
+  fillSounds?: boolean;
   onclose: () => void;
   oncurrencychange: (code: DisplayCurrencyCode) => void;
   ontimezonechange: (id: DisplayTimezoneId) => void;
   ontogglelevels: () => void;
   onresetlayout: () => void;
   onopenshortcuts: () => void;
+  ontogglefillsounds: () => void;
 } = $props();
 
 let panel = $state<HTMLDivElement>();
@@ -214,6 +218,21 @@ const timezoneOptions = $derived(timezonesForPicker(timezone));
             {/each}
           </select>
         </label>
+
+        <div class="settings-row">
+          <div class="settings-copy">
+            <strong>Fill sounds</strong>
+            <span>Quiet beep on fills and TP/SL hits</span>
+          </div>
+          <button
+            class="secondary"
+            type="button"
+            aria-pressed={fillSounds}
+            onclick={ontogglefillsounds}
+          >
+            {fillSounds ? "On" : "Muted"}
+          </button>
+        </div>
 
         <div class="settings-row">
           <div class="settings-copy">

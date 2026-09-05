@@ -3,6 +3,7 @@ import {
   buildClosedTradeReview,
   clearPostMortems,
   formatRMultiple,
+  greenDayStreak,
   loadPostMortems,
   recordPostMortem,
   riskUsd,
@@ -162,5 +163,73 @@ describe("winRecordUtc", () => {
     ];
     expect(winRecordUtc(rows, now, "paper")).toEqual({ wins: 1, total: 2 });
     expect(winRecordUtc(rows, now, "live")).toBeNull();
+  });
+});
+
+describe("greenDayStreak", () => {
+  test("returns 0 below two consecutive green days", () => {
+    const now = Date.UTC(2026, 6, 21, 12, 0, 0);
+    const one = [
+      buildClosedTradeReview({
+        ts: Date.UTC(2026, 6, 21, 1, 0, 0),
+        mode: "paper",
+        symbol: "SOL",
+        side: "long",
+        entryPrice: 100,
+        exitPrice: 110,
+        stopLossPrice: 95,
+        notionalUsd: 500,
+        realizedPnlUsd: 50,
+        exitReason: "tp",
+        signature: "a",
+      }),
+    ];
+    expect(greenDayStreak(one, now, "paper")).toBe(0);
+  });
+
+  test("counts consecutive green UTC days and hides below 2", () => {
+    const now = Date.UTC(2026, 6, 22, 12, 0, 0);
+    const rows = [
+      buildClosedTradeReview({
+        ts: Date.UTC(2026, 6, 22, 1, 0, 0),
+        mode: "live",
+        symbol: "SOL",
+        side: "long",
+        entryPrice: 100,
+        exitPrice: 110,
+        stopLossPrice: 95,
+        notionalUsd: 500,
+        realizedPnlUsd: 40,
+        exitReason: "tp",
+        signature: "d2",
+      }),
+      buildClosedTradeReview({
+        ts: Date.UTC(2026, 6, 21, 1, 0, 0),
+        mode: "live",
+        symbol: "SOL",
+        side: "long",
+        entryPrice: 100,
+        exitPrice: 105,
+        stopLossPrice: 95,
+        notionalUsd: 500,
+        realizedPnlUsd: 20,
+        exitReason: "tp",
+        signature: "d1",
+      }),
+      buildClosedTradeReview({
+        ts: Date.UTC(2026, 6, 20, 1, 0, 0),
+        mode: "live",
+        symbol: "SOL",
+        side: "long",
+        entryPrice: 100,
+        exitPrice: 90,
+        stopLossPrice: 95,
+        notionalUsd: 500,
+        realizedPnlUsd: -30,
+        exitReason: "sl",
+        signature: "red",
+      }),
+    ];
+    expect(greenDayStreak(rows, now, "live")).toBe(2);
   });
 });
