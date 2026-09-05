@@ -152,6 +152,19 @@ describe("parsePrefs", () => {
       ).toBe(expected as number);
     }
   });
+
+  test("accepts hotkeysArmed boolean", () => {
+    expect(
+      parsePrefs(JSON.stringify({ hotkeysArmed: true })).hotkeysArmed,
+    ).toBe(true);
+    expect(
+      parsePrefs(JSON.stringify({ hotkeysArmed: false })).hotkeysArmed,
+    ).toBe(false);
+    expect(
+      parsePrefs(JSON.stringify({ hotkeysArmed: "yes" })).hotkeysArmed,
+    ).toBeUndefined();
+    expect(parsePrefs(JSON.stringify({})).hotkeysArmed).toBeUndefined();
+  });
 });
 
 describe("mergeLayout", () => {

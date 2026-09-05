@@ -36,6 +36,7 @@
     onopenauth,
     onchip,
     oncancelorder,
+    hotkeysArmed = false,
   }: {
     ticket: SpotTicket;
     spotAsset: SpotAsset | null;
@@ -61,6 +62,7 @@
     onopenauth: () => void;
     onchip: (pct: number | "max") => void;
     oncancelorder: (orderKey: string) => void | Promise<void>;
+    hotkeysArmed?: boolean;
   } = $props();
 
   // The store bundle is created once by the page and never replaced —
@@ -121,6 +123,9 @@
     >
       Sell
     </button>
+    {#if hotkeysArmed}
+      <span class="armed-chip" role="status" aria-label="Hotkey trading armed">ARMED</span>
+    {/if}
   </div>
 
   <div class="side-toggle" role="group" aria-label="Spot order type">

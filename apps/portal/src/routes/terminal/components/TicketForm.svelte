@@ -84,6 +84,7 @@
     onsizechip,
     onriskchip,
     orderTemplates = $bindable([] as OrderTemplate[]),
+    hotkeysArmed = false,
   }: {
     ticket: PerpTicket;
     sizeInput?: HTMLInputElement | null;
@@ -132,6 +133,8 @@
     onsizechip: (pct: number | "max") => void;
     onriskchip: (pct: number) => void;
     orderTemplates?: OrderTemplate[];
+    /** Amber ARMED chip on the Long/Short row when hotkey trading is armed. */
+    hotkeysArmed?: boolean;
   } = $props();
 
   const money = (usd: number, digits = 2) =>
@@ -331,6 +334,9 @@
 <div class="side-toggle" role="group" aria-label="Side">
   <button class:active={$tradeSide === "buy"} type="button" onclick={() => ($tradeSide = "buy")}>Long</button>
   <button class:active={$tradeSide === "sell"} type="button" onclick={() => ($tradeSide = "sell")}>Short</button>
+  {#if hotkeysArmed}
+    <span class="armed-chip" role="status" aria-label="Hotkey trading armed">ARMED</span>
+  {/if}
 </div>
 
 <div class="ticket-grid-2">

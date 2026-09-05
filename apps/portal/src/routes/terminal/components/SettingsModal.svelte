@@ -16,6 +16,7 @@ let {
   showLevels = true,
   layoutCustomized = false,
   fillSounds = true,
+  hotkeysArmed = false,
   onclose,
   oncurrencychange,
   ontimezonechange,
@@ -23,6 +24,7 @@ let {
   onresetlayout,
   onopenshortcuts,
   ontogglefillsounds,
+  ontogglehotkeysarmed,
 }: {
   open?: boolean;
   currency: DisplayCurrencyCode;
@@ -30,6 +32,7 @@ let {
   showLevels?: boolean;
   layoutCustomized?: boolean;
   fillSounds?: boolean;
+  hotkeysArmed?: boolean;
   onclose: () => void;
   oncurrencychange: (code: DisplayCurrencyCode) => void;
   ontimezonechange: (id: DisplayTimezoneId) => void;
@@ -37,6 +40,7 @@ let {
   onresetlayout: () => void;
   onopenshortcuts: () => void;
   ontogglefillsounds: () => void;
+  ontogglehotkeysarmed: () => void;
 } = $props();
 
 let panel = $state<HTMLDivElement>();
@@ -231,6 +235,21 @@ const timezoneOptions = $derived(timezonesForPicker(timezone));
             onclick={ontogglefillsounds}
           >
             {fillSounds ? "On" : "Muted"}
+          </button>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-copy">
+            <strong>Hotkey trading</strong>
+            <span>Show ARMED on the ticket — A arms, Esc disarms. B/S/M/L unchanged.</span>
+          </div>
+          <button
+            class="secondary"
+            type="button"
+            aria-pressed={hotkeysArmed}
+            onclick={ontogglehotkeysarmed}
+          >
+            {hotkeysArmed ? "Armed" : "Off"}
           </button>
         </div>
 

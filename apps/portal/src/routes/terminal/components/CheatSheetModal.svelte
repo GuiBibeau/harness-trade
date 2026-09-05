@@ -27,6 +27,7 @@
         ["/ · ⌘K", "Market and command palette"],
         ["B / S", "Long / Short — flips a live ticket in place"],
         ["M / L", "Ticket order type market / limit"],
+        ["A", "Arm hotkey trading mode (amber chip)"],
         ["C C", "Market-close the selected position (press twice)"],
         ["X X", "Cancel the selected market's orders (press twice)"],
         ["[ ]", "Previous / next timeframe"],
@@ -35,7 +36,7 @@
         ["Alt+Click", "Set price alert at cursor"],
         ["Drag axis", "Scale price/time · double-click resets"],
         ["?", "This sheet"],
-        ["Esc", "Close any overlay"],
+        ["Esc", "Disarm hotkeys / close any overlay"],
       ] as [keys, what] (keys)}
         <div class="cheat-row"><kbd>{keys}</kbd><span>{what}</span></div>
       {/each}
