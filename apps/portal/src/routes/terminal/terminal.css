@@ -570,6 +570,27 @@ button.account-row.copyable:hover:not(:disabled) {
   border: 1px solid var(--line);
   border-radius: 0;
   overflow: hidden;
+  position: relative;
+}
+
+/* Hotkey-trading ARMED chip — overlaid on the right end of the side row
+   (mock 07). Visible only while armed; no pulse. */
+.side-toggle .armed-chip {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  pointer-events: none;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  background: var(--surface);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  padding: 0.22rem 0.38rem;
+  text-transform: uppercase;
 }
 
 .side-toggle button {

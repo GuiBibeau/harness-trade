@@ -76,6 +76,12 @@ export type TerminalPrefs = {
   orderTemplates: OrderTemplate[];
   /** Quiet fill/TP-SL beeps — default ON unless reduced-motion. */
   fillSounds: boolean;
+  /**
+   * Hotkey trading mode — opt-in ARMED state (default OFF). When armed,
+   * the amber chip shows on the ticket side row; Escape disarms. B/S/M/L
+   * behavior is unchanged either way.
+   */
+  hotkeysArmed: boolean;
 };
 
 export const ORDER_TEMPLATES_CAP = 6;
@@ -262,6 +268,9 @@ export function parsePrefs(raw: string | null): Partial<TerminalPrefs> {
     prefs.orderTemplates = parseOrderTemplates(data.orderTemplates);
   }
   if (typeof data.fillSounds === "boolean") prefs.fillSounds = data.fillSounds;
+  if (typeof data.hotkeysArmed === "boolean") {
+    prefs.hotkeysArmed = data.hotkeysArmed;
+  }
   return prefs;
 }
 
@@ -304,6 +313,7 @@ export function persistPrefs(
   _displayTimezone: DisplayTimezoneId,
   _orderTemplates: OrderTemplate[] = [],
   _fillSounds = true,
+  _hotkeysArmed = false,
 ): void {
   if (typeof window === "undefined") return;
   try {
@@ -334,6 +344,7 @@ export function persistPrefs(
         displayTimezone: _displayTimezone,
         orderTemplates: _orderTemplates.slice(0, ORDER_TEMPLATES_CAP),
         fillSounds: _fillSounds,
+        hotkeysArmed: _hotkeysArmed,
       }),
     );
   } catch {

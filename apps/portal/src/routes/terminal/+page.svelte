@@ -923,6 +923,7 @@
   let watchlist: string[] = [];
   let orderTemplates: OrderTemplate[] = [];
   let fillSounds = true;
+  let hotkeysArmed = false;
   // Screener controls (persisted; screener panel retired but prefs kept).
   let screenSort: "movers" | "volume" | "cap" = "movers";
   let screenHub: "all" | "crypto" | "equities" | "pre-ipo" = "all";
@@ -1794,6 +1795,7 @@
       displayTimezone,
       orderTemplates,
       fillSounds,
+      hotkeysArmed,
     );
 
   function agentOk(message: string): AgentActionResult {
@@ -6753,6 +6755,9 @@
     } else {
       fillSounds = defaultFillSoundsEnabled();
     }
+    if (prefs.hotkeysArmed !== undefined) {
+      hotkeysArmed = prefs.hotkeysArmed;
+    }
     // Without Privy, live trading is impossible — stay in paper regardless
     // of a previously saved LIVE preference.
     if (!readPrivyConfig().appId) paperMode = true;
@@ -6884,6 +6889,12 @@
       disarmRay();
       return;
     }
+    // Hotkey trading mode: Esc clears the ARMED chip (persisted off).
+    if (event.key === "Escape" && hotkeysArmed) {
+      event.stopPropagation();
+      hotkeysArmed = false;
+      return;
+    }
     if (event.key === "Escape") {
       // Modal-priority: if a modal owns this Escape, close only it and leave
       // the side chat — one Escape never doubles as chat-close.
@@ -6983,6 +6994,11 @@
     }
     const tfIndex = PHOENIX_TIMEFRAMES.indexOf(selectedTimeframe);
     switch (event.key.toLowerCase()) {
+      case "a":
+        // Opt-in hotkey trading mode — amber ARMED chip on the ticket.
+        event.preventDefault();
+        hotkeysArmed = !hotkeysArmed;
+        break;
       case "b":
         // In spot mode B/S drive the spot ticket — never a hidden perp order.
         if (tradeMode === "spot") {
@@ -8004,6 +8020,7 @@
   timezone={displayTimezone}
   {showLevels}
   {fillSounds}
+  {hotkeysArmed}
   {layoutCustomized}
   onclose={() => (settingsOpen = false)}
   oncurrencychange={(code) => {
@@ -8017,6 +8034,9 @@
   }}
   ontogglefillsounds={() => {
     fillSounds = !fillSounds;
+  }}
+  ontogglehotkeysarmed={() => {
+    hotkeysArmed = !hotkeysArmed;
   }}
   onresetlayout={resetLayout}
   onopenshortcuts={() => {
@@ -8048,6 +8068,7 @@
     onopenauth={openAuthModal}
     onchip={setSpotAmountChip}
     oncancelorder={cancelSpotLimitOrder}
+    {hotkeysArmed}
   />
 {/snippet}
 
@@ -8103,6 +8124,7 @@
     onsizechip={setSizeChip}
     onriskchip={setRiskChip}
     bind:orderTemplates
+    {hotkeysArmed}
   />
 {/snippet}
 
