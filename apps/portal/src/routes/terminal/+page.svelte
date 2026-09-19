@@ -29,6 +29,7 @@
   import {
     aiDisabled,
     aiEventRead,
+    aiExplainMove,
     aiFundingRead,
     aiPositionBrief,
     aiSessionRecap,
@@ -66,6 +67,7 @@
     rayLineSpec,
   } from "$lib/terminal/chart-lines";
   import { parseTerminalDeepLink } from "$lib/terminal/deep-link";
+  import { sessionMoveFacts } from "$lib/terminal/explain-move";
   import {
     createPanelLayout,
     migrateLayout,
@@ -1038,6 +1040,8 @@
   // Intel feeds: news ticker + sanctions screening.
   let news: NewsItem[] = [];
   let eventRead: AiRead = IDLE_READ;
+  let explainMoveRead: AiRead = IDLE_READ;
+  let explainMoveOpen = false;
   let walletScreen: { flagged: boolean; checked: boolean } = {
     flagged: false,
     checked: false,
@@ -6548,6 +6552,47 @@
     }
   }
 
+  async function runExplainMove(): Promise<void> {
+    if (aiDisabled() || explainMoveRead.phase === "loading") return;
+    const points = tradeMode === "spot" ? spotChartPoints : chartPoints;
+    const symbol =
+      tradeMode === "spot" ? (spotAsset?.symbol ?? null) : selectedSymbol;
+    if (!symbol) return;
+    const facts = sessionMoveFacts(points, {
+      symbol,
+      venue: tradeMode === "spot" ? "spot" : "perp",
+      timeframe:
+        tradeMode === "spot"
+          ? spotIntervalFor(selectedTimeframe)
+          : selectedTimeframe,
+      change24hPct: change24h,
+    });
+    if (!facts) {
+      explainMoveOpen = true;
+      explainMoveRead = {
+        phase: "error",
+        text: "",
+        error: "Need more candles on the chart first.",
+      };
+      return;
+    }
+    explainMoveOpen = true;
+    explainMoveRead = { phase: "loading", text: explainMoveRead.text };
+    try {
+      explainMoveRead = {
+        phase: "ready",
+        asOf: Date.now(),
+        text: await aiExplainMove(facts),
+      };
+    } catch (error) {
+      explainMoveRead = { phase: "error", text: "", error: aiErr(error) };
+    }
+  }
+
+  function dismissExplainMove(): void {
+    explainMoveOpen = false;
+  }
+
   // ── Spot limit orders (Jupiter Trigger) ───────────────────────────
   // (base64 tx deserialization lives in $lib/phoenix-trade behind the lazy
   // web3 boundary — see tradeModule above.)
@@ -7258,6 +7303,17 @@
             <span class="spot-venue-tag">Jupiter · best route</span>
           </div>
         {/if}
+        {#if !aiDisabled()}
+          <button
+            class="ghost explain-btn"
+            type="button"
+            disabled={explainMoveRead.phase === "loading"}
+            title="Explain this chart window from computed facts"
+            onclick={() => void runExplainMove()}
+          >
+            {explainMoveRead.phase === "loading" ? "…" : "explain"}
+          </button>
+        {/if}
       </div>
 
       <div class="chart-workspace">
@@ -7315,6 +7371,23 @@
                 class:negative={(change24h ?? 0) < 0}
               >{formatPercent(change24h)}</em>
             </div>
+            {#if explainMoveOpen}
+              <div class="explain-chip" role="status">
+                {#if explainMoveRead.phase === "error"}
+                  <span class="explain-chip-text muted">{explainMoveRead.error}</span>
+                {:else if explainMoveRead.phase === "ready" || explainMoveRead.text}
+                  <span class="explain-chip-text">{explainMoveRead.text}</span>
+                {:else}
+                  <span class="explain-chip-text muted">Reading the move…</span>
+                {/if}
+                <button
+                  class="explain-chip-dismiss"
+                  type="button"
+                  aria-label="Dismiss explanation"
+                  onclick={dismissExplainMove}
+                >×</button>
+              </div>
+            {/if}
           </div>
 
           {#if displayPoints.length < 2}
@@ -8644,6 +8717,62 @@
   .chart-legend em {
     font-style: normal;
     font-weight: 700;
+  }
+
+  .explain-btn {
+    flex-shrink: 0;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--muted);
+    min-height: 1.7rem;
+  }
+
+  .explain-btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  .explain-chip {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    max-width: min(28rem, 100%);
+    margin-top: 0.35rem;
+    padding: 0.4rem 0.5rem 0.4rem 0.55rem;
+    border: 1px solid var(--line);
+    border-left: 2px solid rgba(255, 77, 151, 0.55);
+    background: var(--surface);
+    border-radius: 0;
+    font-size: 0.74rem;
+    line-height: 1.4;
+  }
+
+  .explain-chip-text {
+    flex: 1;
+    min-width: 0;
+    color: var(--ink);
+  }
+
+  .explain-chip-text.muted {
+    color: var(--muted);
+  }
+
+  .explain-chip-dismiss {
+    flex-shrink: 0;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1;
+    padding: 0 0.15rem;
+    cursor: pointer;
+  }
+
+  .explain-chip-dismiss:hover {
+    color: var(--ink);
   }
 
   .chart-canvas {

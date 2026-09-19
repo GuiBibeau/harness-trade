@@ -195,6 +195,17 @@ export async function aiEventRead(headlines: unknown): Promise<string> {
   });
 }
 
+/** Narrate the loaded chart window from pre-computed session-move facts. */
+export async function aiExplainMove(snapshot: unknown): Promise<string> {
+  const user = JSON.stringify(snapshot);
+  return complete({
+    system: ANALYST_SYSTEM,
+    user: `Chart session move for one market. From the facts only, explain what the loaded window did (direction, range, anything notable vs the 24h change when present). No advice, no new thesis.\n\n${user}`,
+    cacheKey: `explain:${hash(user)}`,
+    maxTokens: 120,
+  });
+}
+
 export async function aiTradeIdeas(snapshot: unknown): Promise<string> {
   const user = JSON.stringify(snapshot);
   return complete({
